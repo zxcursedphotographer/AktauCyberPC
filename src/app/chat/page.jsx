@@ -2,9 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getUser } from "@/lib/auth";
-import { sendMessage } from "@/app/actions";
 import Avatar from "@/components/Avatar";
 import AutoRefresh from "@/components/AutoRefresh";
+import ChatThread from "@/components/ChatThread";
+import ChatForm from "@/components/ChatForm";
 
 export default async function Chat({ searchParams: p }) {
   const me = await getUser(); if (!me) redirect("/login");
@@ -38,16 +39,12 @@ export default async function Chat({ searchParams: p }) {
             <div className="truncate opacity-70">{c.listing.title}</div><div className="truncate text-xs opacity-60">{c.last.text}</div>
           </Link>))}
       </aside>
-      <section className="card flex min-h-[60vh] flex-col">
+      <section className="card flex h-[70vh] flex-col">
         {!selL || !selU ? <p className="m-auto opacity-70">Выберите диалог слева.</p> : <>
           <div className="mb-3 flex items-center gap-2 border-b border-white/10 pb-2"><Avatar user={selU} size={30} /><b>{selU.username}</b> · <Link href={`/listing/${selL.id}`} className="underline">{selL.title}</Link></div>
-          <div className="flex-1 space-y-1 overflow-y-auto text-sm">
-            {thread.map((m) => <p key={m.id} className={`max-w-[75%] rounded-lg px-3 py-1.5 ${m.senderId === me.id ? "ml-auto bg-accent text-white" : "bg-slate-200 dark:bg-white/10"}`}>{m.text}</p>)}
-          </div>
-          <form action={sendMessage} className="mt-3 flex gap-2">
-            <input type="hidden" name="listingId" value={selL.id} /><input type="hidden" name="receiverId" value={selU.id} />
-            <input name="text" required maxLength={2000} placeholder="Сообщение…" className="input" /><button className="btn">Отправить</button>
-          </form></>}
+          <ChatThread meId={me.id} initial={thread.map((m) => ({ id: m.id, text: m.text, senderId: m.senderId }))} />
+          <ChatForm listingId={selL.id} receiverId={selU.id} />
+        </>}
       </section>
     </div>
   );

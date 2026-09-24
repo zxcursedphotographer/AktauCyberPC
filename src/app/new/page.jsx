@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import ImageInput from "@/components/ImageInput";
 import { getUser, mailOk } from "@/lib/auth";
 import { createListing } from "@/app/actions";
@@ -30,7 +31,10 @@ export default async function NewListing() {
             <textarea name={`t_${k}_metrics`} rows={4} className="input" placeholder={"Показатели, каждый с новой строки:\nТемпература GPU, °C: 71\nHot Spot, °C: 83\nМайнинг: не использовалась"} />
             <label className="block text-sm">Скриншоты и фото тестов<ImageInput name={`t_${k}_shots`} multiple className="input" /></label>
           </div></details>))}
-      <button className="btn w-full justify-center">Опубликовать</button>
+      <div className="flex gap-2">
+        <button className="btn flex-1 justify-center">Опубликовать</button>
+        <Link href="/" className="btn-secondary flex-1 justify-center text-center">Отмена</Link>
+      </div>
     </form>
   );
 }
