@@ -7,15 +7,34 @@ import TrustBadge from "@/components/TrustBadge";
 import Avatar from "@/components/Avatar";
 import ImageInput from "@/components/ImageInput";
 
-export default async function Profile({ params }) {
+export default async function Profile({ params, searchParams }) {
   const u = await prisma.user.findUnique({
     where: { username: decodeURIComponent(params.username) },
-    include: { listings: { where: { status: "PUBLISHED" }, include: { images: { take: 1 } } }, reviewsGot: { include: { author: true }, orderBy: [{ pinned: "desc" }, { createdAt: "desc" }] } },
+    include: {
+      listings: { include: { images: { take: 1 } }, orderBy: { createdAt: "desc" } },
+      reviewsGot: { include: { author: true }, orderBy: [{ pinned: "desc" }, { createdAt: "desc" }] },
+    },
   });
   if (!u) notFound();
   const me = await getUser();
   const sa = me?.role === "SUPER_ADMIN", own = me?.id === u.id, edit = own || sa;
   const canReview = me && !own && (sa || (await prisma.listing.count({ where: { userId: u.id, buyerId: me.id, status: "SOLD" } })) > 0);
+
+  const activeListings = u.listings.filter((l) => l.status === "PUBLISHED" || l.status === "UNDER_REVIEW" || l.status === "DRAFT");
+  const soldListings = u.listings.filter((l) => l.status === "SOLD");
+  const deletedListings = u.listings.filter((l) => l.status === "DELETED");
+
+  const tab = searchParams.tab === "sold" ? "sold" : searchParams.tab === "deleted" ? "deleted" : "active";
+  const shown = tab === "sold" ? soldListings : tab === "deleted" ? deletedListings : activeListings;
+
+  const tabCls = (t) => `flex-1 rounded-lg px-3 py-1.5 text-center text-sm transition ${
+    tab === t
+      ? t === "deleted"
+        ? "bg-hot text-white shadow-lg shadow-hot/30"
+        : "bg-accent text-white shadow-lg shadow-accent/30"
+      : "bg-slate-200 dark:bg-white/5 hover:bg-white/10"
+  }`;
+
   return (
     <div>
       <div className="h-40 overflow-hidden rounded-xl bg-gradient-to-r from-accent to-hot md:h-56">
@@ -57,13 +76,55 @@ export default async function Profile({ params }) {
           <button className="btn">Задать</button>
         </form>)}
 
-      <h2 className="mb-2 mt-6 text-lg font-bold">Объявления ({u.listings.length})</h2>
+      <h2 className="mb-3 mt-6 text-lg font-bold">Объявления</h2>
+      <div className="mb-4 flex gap-2">
+        <Link href={`/u/${u.username}`} className={tabCls("active")}>Активные ({activeListings.length})</Link>
+        <Link href={`/u/${u.username}?tab=sold`} className={tabCls("sold")}>Проданные ({soldListings.length})</Link>
+        {edit && (
+          <Link href={`/u/${u.username}?tab=deleted`} className={tabCls("deleted")}>Удалённые ({deletedListings.length})</Link>
+        )}
+      </div>
+
+      {shown.length === 0 && (
+        <p className="card opacity-70">
+          {tab === "sold" ? "Проданных объявлений нет." : tab === "deleted" ? "Удалённых объявлений нет." : "Активных объявлений нет."}
+        </p>
+      )}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {u.listings.map((l) => (
-          <Link key={l.id} href={`/listing/${l.id}`} className="card overflow-hidden !p-0 hover:border-accent">
-            {l.images[0] && <img src={l.images[0].url} alt="" className="h-40 w-full object-cover" />}
-            <div className="p-3"><b>{l.title}</b><p className="text-accent">{l.price.toLocaleString("ru")} ₸</p></div>
-          </Link>))}
+        {shown.map((l) => (
+          <div key={l.id} className="card relative overflow-hidden !p-0">
+            {l.status === "SOLD" && (
+              <span className="absolute left-2 top-2 z-10 rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white">
+                ПРОДАНО
+              </span>
+            )}
+            {l.status === "DELETED" && (
+              <span className="absolute left-2 top-2 z-10 rounded-full bg-hot px-2 py-0.5 text-xs font-bold text-white">
+                УДАЛЕНО
+              </span>
+            )}
+            {l.status === "DELETED" ? (
+              <div className="p-3">
+                {l.images[0] && <img src={l.images[0].url} alt="" className="mb-2 h-40 w-full rounded object-cover opacity-40 grayscale" />}
+                <b className="opacity-60">{l.title}</b>
+                <p className="text-sm text-accent opacity-60">{l.price.toLocaleString("ru")} ₸</p>
+                <div className="mt-2 rounded-lg border border-hot/40 bg-hot/10 p-2 text-xs">
+                  <b className="block text-hot">Удалено администрацией</b>
+                  <span className="opacity-90">Причина: {l.deletedReason || "не указана"}</span>
+                  {l.deletedAt && <span className="block opacity-60">{new Date(l.deletedAt).toLocaleString("ru")}</span>}
+                </div>
+              </div>
+            ) : (
+              <Link href={`/listing/${l.id}`} className="block hover:border-accent">
+                {l.images[0] && <img src={l.images[0].url} alt="" className={`h-40 w-full object-cover ${l.status === "SOLD" ? "opacity-60" : ""}`} />}
+                <div className="p-3">
+                  <b className={l.status === "SOLD" ? "line-through opacity-60" : ""}>{l.title}</b>
+                  <p className="text-accent">{l.price.toLocaleString("ru")} ₸</p>
+                </div>
+              </Link>
+            )}
+          </div>
+        ))}
       </div>
 
       <h2 id="reviews" className="mb-2 mt-6 text-lg font-bold">Отзывы ({u.reviewsGot.length})</h2>

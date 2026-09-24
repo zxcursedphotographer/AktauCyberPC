@@ -123,15 +123,18 @@ const REASONS = {
   2: "Неправильное оформление объявления",
   3: "Мошенничество или неадекватное поведение",
 };
+
 export async function deleteListing(f) {
   const me = await getUser(); if (me?.role !== "SUPER_ADMIN") throw new Error("Forbidden");
   const id = f.get("id"), reason = REASONS[f.get("reason")]; if (!reason) throw new Error("Укажите причину");
   const l = await prisma.listing.findUnique({ where: { id } }); if (!l) return;
   await prisma.$transaction([
     prisma.adminLog.create({ data: { adminId: me.id, actionType: "DELETE_LISTING", targetId: id, reason, details: l.title } }),
-    prisma.listing.delete({ where: { id } }),
+    prisma.listing.update({ where: { id }, data: { status: "DELETED", deletedReason: reason, deletedAt: new Date() } }),
   ]);
   revalidatePath("/admin");
+  revalidatePath("/");
+  revalidatePath(`/u/${l.userId}`);
   if (f.get("back")) redirect(f.get("back"));
 }
 

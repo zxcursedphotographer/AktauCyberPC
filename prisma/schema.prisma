@@ -25,6 +25,7 @@ enum ListingStatus {
   PUBLISHED
   UNDER_REVIEW
   SOLD
+  DELETED
 }
 
 enum ComponentType {
@@ -78,23 +79,25 @@ model User {
 }
 
 model Listing {
-  id          String          @id @default(cuid())
-  title       String
-  description String
-  price       Int
-  category    String
-  status      ListingStatus   @default(PUBLISHED)
-  userId      String
-  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  city        String
-  district    String
-  viewsCount  Int             @default(0)
-  buyerId     String?
-  createdAt   DateTime        @default(now())
-  images      ListingImage[]
-  tests       ComponentTest[]
-  messages    Message[]
-  reports     Report[]
+  id            String          @id @default(cuid())
+  title         String
+  description   String
+  price         Int
+  category      String
+  status        ListingStatus   @default(PUBLISHED)
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  city          String
+  district      String
+  viewsCount    Int             @default(0)
+  buyerId       String?
+  deletedReason String?
+  deletedAt     DateTime?
+  createdAt     DateTime        @default(now())
+  images        ListingImage[]
+  tests         ComponentTest[]
+  messages      Message[]
+  reports       Report[]
   @@index([status, category, city])
 }
 
