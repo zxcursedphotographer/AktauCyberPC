@@ -186,6 +186,7 @@ export async function removeMedia(f) {
   const u = await prisma.user.update({ where: { id }, data: { [field]: null } });
   revalidatePath(`/u/${u.username}`);
 }
+
 export async function setTrust(f) {
   const me = await getUser(); if (me?.role !== "SUPER_ADMIN") throw new Error("Forbidden");
   const score = Math.min(100, Math.max(1, Math.round(+f.get("score") || 1)));
@@ -193,6 +194,7 @@ export async function setTrust(f) {
   await prisma.adminLog.create({ data: { adminId: me.id, actionType: "SET_TRUST", targetId: u.id, details: String(score) } });
   revalidatePath(`/u/${u.username}`);
 }
+
 export async function addReview(f) {
   const me = await getUser(), id = f.get("id"); if (!me || me.id === id) return;
   const deal = me.role === "SUPER_ADMIN" || (await prisma.listing.count({ where: { userId: id, buyerId: me.id, status: "SOLD" } })) > 0;
@@ -240,7 +242,7 @@ export async function createListing(f) {
     tests.push({ componentType: t, testTitle: tt, resultStatus: f.get(`t_${t}_result`) === "FAILED" ? "FAILED" : "PASSED", metrics: parseMetrics(f.get(`t_${t}_metrics`)), mediaUrls });
   }
   const l = await prisma.listing.create({ data: {
-    title, description: String(f.get("description")), price: Math.max(0, +f.get("price") || 0), category: String(f.get("category")),
+    title, description: String(f.get("description")), price: Math.min(2000000000, Math.max(0, Math.round(+f.get("price") || 0))), category: String(f.get("category")),
     city: String(f.get("city") || me.city || "Актау"), district: String(f.get("district") || me.district || ""), userId: me.id,
     images: { create: photos.map((url, order) => ({ url, order })) }, tests: { create: tests } } });
   redirect(`/listing/${l.id}`);
@@ -248,6 +250,7 @@ export async function createListing(f) {
 
 // ---------- Проверка пользователей, похвала/выговор ----------
 async function needSA() { const me = await getUser(); if (me?.role !== "SUPER_ADMIN") throw new Error("Forbidden"); return me; }
+
 export async function sendToReview(f) {
   const me = await needSA(), id = f.get("id"); if (id === me.id) return;
   await prisma.$transaction([
@@ -257,6 +260,7 @@ export async function sendToReview(f) {
   ]);
   revalidatePath("/admin"); revalidatePath("/review");
 }
+
 export async function closeReview(f) {
   const me = await needSA(), id = f.get("id");
   await prisma.$transaction([
@@ -265,13 +269,27 @@ export async function closeReview(f) {
   ]);
   revalidatePath("/admin"); revalidatePath("/review");
 }
+
 export async function adjustTrust(f) {
-  const me = await needSA(), d = +f.get("delta") === 5 ? 5 : -5;
-  const u = await prisma.user.findUnique({ where: { id: f.get("id") } }); if (!u) return;
-  await prisma.user.update({ where: { id: u.id }, data: { trustScore: Math.min(100, Math.max(1, u.trustScore + d)) } });
-  await prisma.adminLog.create({ data: { adminId: me.id, actionType: d > 0 ? "PRAISE" : "WARN", targetId: u.id, details: `${d > 0 ? "+" : ""}${d}` } });
-  revalidatePath("/admin"); revalidatePath(`/u/${u.username}`);
+  const me = await needSA(), id = f.get("id");
+  const raw = f.get("delta");
+  const d = Number(raw) === 5 ? 5 : Number(raw) === -5 ? -5 : 5;
+  const u = await prisma.user.findUnique({ where: { id } });
+  if (!u) return;
+  const next = Math.min(100, Math.max(1, u.trustScore + d));
+  await prisma.user.update({ where: { id: u.id }, data: { trustScore: next } });
+  await prisma.adminLog.create({
+    data: {
+      adminId: me.id,
+      actionType: d > 0 ? "PRAISE" : "WARN",
+      targetId: u.id,
+      details: `${d > 0 ? "+" : ""}${d} (${u.trustScore} → ${next})`,
+    },
+  });
+  revalidatePath("/admin");
+  revalidatePath(`/u/${u.username}`);
 }
+
 export async function sendSupport(f) {
   const me = await getUser(); if (!me) redirect("/login");
   const to = await prisma.user.findUnique({ where: { id: f.get("receiverId") } }), text = String(f.get("text")).trim().slice(0, 2000);
