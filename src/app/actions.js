@@ -133,6 +133,7 @@ export async function reportUser(f) {
   if (recent) return { error: "Вы уже жаловались на этого пользователя за последние 24 часа" };
   await prisma.report.create({ data: { reporterId: me.id, targetUserId, listingId, reason: reasonText } });
   revalidatePath("/admin");
+  revalidatePath("/admin/reports");
   return { ok: true };
 }
 
@@ -151,9 +152,24 @@ export async function deleteListing(f) {
     prisma.listing.update({ where: { id }, data: { status: "DELETED", deletedReason: reason, deletedAt: new Date() } }),
   ]);
   revalidatePath("/admin");
+  revalidatePath("/admin/listings");
   revalidatePath("/");
   revalidatePath(`/u/${l.userId}`);
   if (f.get("back")) redirect(f.get("back"));
+}
+
+export async function restoreListing(f) {
+  const me = await getUser(); if (me?.role !== "SUPER_ADMIN") throw new Error("Forbidden");
+  const id = f.get("id");
+  const l = await prisma.listing.findUnique({ where: { id } }); if (!l) return;
+  await prisma.$transaction([
+    prisma.adminLog.create({ data: { adminId: me.id, actionType: "RESTORE_LISTING", targetId: id, details: l.title } }),
+    prisma.listing.update({ where: { id }, data: { status: "PUBLISHED", deletedReason: null, deletedAt: null } }),
+  ]);
+  revalidatePath("/admin");
+  revalidatePath("/admin/listings");
+  revalidatePath("/");
+  revalidatePath(`/u/${l.userId}`);
 }
 
 export async function setAccountStatus(f) {
@@ -164,6 +180,7 @@ export async function setAccountStatus(f) {
     prisma.adminLog.create({ data: { adminId: me.id, actionType: `ACCOUNT_${status}`, targetId: id } }),
   ]);
   revalidatePath("/admin");
+  revalidatePath("/admin/users");
 }
 
 export async function resolveReport(f) {
@@ -176,6 +193,7 @@ export async function resolveReport(f) {
     prisma.adminLog.create({ data: { adminId: me.id, actionType: ok ? "REPORT_CONFIRMED" : "REPORT_REJECTED", targetId: r.id } }),
   ]);
   revalidatePath("/admin");
+  revalidatePath("/admin/reports");
 }
 
 // ---------- Профили, траст, отзывы ----------
@@ -214,6 +232,7 @@ export async function setTrust(f) {
   const u = await prisma.user.update({ where: { id: f.get("id") }, data: { trustScore: score } });
   await prisma.adminLog.create({ data: { adminId: me.id, actionType: "SET_TRUST", targetId: u.id, details: String(score) } });
   revalidatePath(`/u/${u.username}`);
+  revalidatePath("/admin/users");
 }
 
 export async function addReview(f) {
@@ -279,7 +298,9 @@ export async function sendToReview(f) {
     prisma.message.create({ data: { senderId: me.id, receiverId: id, text: "Ваш аккаунт отправлен на проверку. Ответьте здесь на вопросы администрации." } }),
     prisma.adminLog.create({ data: { adminId: me.id, actionType: "SEND_TO_REVIEW", targetId: id } }),
   ]);
-  revalidatePath("/admin"); revalidatePath("/review");
+  revalidatePath("/admin");
+  revalidatePath("/admin/users");
+  revalidatePath("/review");
 }
 
 export async function closeReview(f) {
@@ -288,7 +309,9 @@ export async function closeReview(f) {
     prisma.user.update({ where: { id }, data: { status: "ACTIVE" } }),
     prisma.adminLog.create({ data: { adminId: me.id, actionType: "CLOSE_REVIEW", targetId: id } }),
   ]);
-  revalidatePath("/admin"); revalidatePath("/review");
+  revalidatePath("/admin");
+  revalidatePath("/admin/users");
+  revalidatePath("/review");
 }
 
 export async function adjustTrust(f) {
@@ -308,6 +331,16 @@ export async function adjustTrust(f) {
     },
   });
   revalidatePath("/admin");
+  revalidatePath("/admin/users");
+  revalidatePath(`/u/${u.username}`);
+}
+
+export async function resetTrust(f) {
+  const me = await needSA(), id = f.get("id");
+  const u = await prisma.user.update({ where: { id }, data: { trustScore: 50 } });
+  await prisma.adminLog.create({ data: { adminId: me.id, actionType: "RESET_TRUST", targetId: u.id, details: "50" } });
+  revalidatePath("/admin");
+  revalidatePath("/admin/users");
   revalidatePath(`/u/${u.username}`);
 }
 
