@@ -118,6 +118,24 @@ export async function unblockUser(f) {
   revalidatePath("/chat");
 }
 
+// ---------- Жалобы ----------
+export async function reportUser(f) {
+  const me = await getUser(); if (!me) return { error: "Не авторизован" };
+  const targetUserId = f.get("targetUserId");
+  const listingId = f.get("listingId") || null;
+  const reasonText = String(f.get("reason") || "").trim().slice(0, 500);
+  if (!targetUserId || !reasonText) return { error: "Выберите причину" };
+  if (targetUserId === me.id) return { error: "Нельзя жаловаться на себя" };
+  if (!(await allow(`rep:${me.id}`, 5, 3600))) return { error: "Слишком много жалоб. Подождите" };
+  const recent = await prisma.report.findFirst({
+    where: { reporterId: me.id, targetUserId, createdAt: { gt: new Date(Date.now() - 86400e3) } },
+  });
+  if (recent) return { error: "Вы уже жаловались на этого пользователя за последние 24 часа" };
+  await prisma.report.create({ data: { reporterId: me.id, targetUserId, listingId, reason: reasonText } });
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
 const REASONS = {
   1: "Не соответствует проверкам / недействительные тесты",
   2: "Неправильное оформление объявления",
