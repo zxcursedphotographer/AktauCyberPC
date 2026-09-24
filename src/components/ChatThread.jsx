@@ -33,7 +33,12 @@ export default function ChatThread({ meId, initial }) {
                   }}
                   className="flex gap-1"
                 >
-                  <input name="text" defaultValue={m.text} className="input !py-0.5 !text-black" autoFocus />
+                  <input
+                    name="text"
+                    defaultValue={m.text}
+                    className="input !py-0.5 !text-inherit"
+                    autoFocus
+                  />
                   <button className="rounded bg-white/20 px-2 text-xs">OK</button>
                   <button type="button" onClick={() => setEditingId(null)} className="rounded bg-white/20 px-2 text-xs">✕</button>
                 </form>
