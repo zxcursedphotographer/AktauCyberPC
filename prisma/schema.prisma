@@ -46,49 +46,51 @@ enum ReportStatus {
   REJECTED
 }
 
-
 model User {
-  id           String        @id @default(cuid())
-  email        String        @unique
-  passwordHash String
-  username     String        @unique
-  role         Role          @default(USER)
-  status       AccountStatus @default(ACTIVE)
-  avatarUrl    String?
-  bannerUrl    String?
-  country      String?
-  city         String?
-  district     String?
-  rating       Float         @default(0)
-  createdAt    DateTime      @default(now())
-  bio          String?
-  emailVerified Boolean      @default(false)
-  tokens       Token[]
-  trustScore   Int           @default(50)
-  reviewsGiven Review[]      @relation("author")
-  reviewsGot   Review[]      @relation("about")
-  listings     Listing[]
-  sent         Message[]     @relation("sent")
-  received     Message[]     @relation("received")
-  reportsMade  Report[]      @relation("reporter")
-  reportsOn    Report[]      @relation("target")
-  adminLogs    AdminLog[]
+  id            String        @id @default(cuid())
+  email         String        @unique
+  passwordHash  String
+  username      String        @unique
+  role          Role          @default(USER)
+  status        AccountStatus @default(ACTIVE)
+  avatarUrl     String?
+  bannerUrl     String?
+  country       String?
+  city          String?
+  district      String?
+  rating        Float         @default(0)
+  createdAt     DateTime      @default(now())
+  bio           String?
+  emailVerified Boolean       @default(false)
+  tokens        Token[]
+  trustScore    Int           @default(50)
+  reviewsGiven  Review[]      @relation("author")
+  reviewsGot    Review[]      @relation("about")
+  listings      Listing[]
+  sent          Message[]     @relation("sent")
+  received      Message[]     @relation("received")
+  reportsMade   Report[]      @relation("reporter")
+  reportsOn     Report[]      @relation("target")
+  adminLogs     AdminLog[]
+  blocksMade    Block[]       @relation("blocker")
+  blocksGot     Block[]       @relation("blocked")
+  lastSeen      DateTime      @default(now())
 }
 
 model Listing {
-  id          String        @id @default(cuid())
+  id          String          @id @default(cuid())
   title       String
   description String
   price       Int
   category    String
-  status      ListingStatus @default(PUBLISHED)
+  status      ListingStatus   @default(PUBLISHED)
   userId      String
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   city        String
   district    String
-  viewsCount  Int           @default(0)
+  viewsCount  Int             @default(0)
   buyerId     String?
-  createdAt   DateTime      @default(now())
+  createdAt   DateTime        @default(now())
   images      ListingImage[]
   tests       ComponentTest[]
   messages    Message[]
@@ -116,17 +118,30 @@ model ComponentTest {
 }
 
 model Message {
-  id         String   @id @default(cuid())
-  senderId   String
-  receiverId String
-  listingId  String?
-  sender     User     @relation("sent", fields: [senderId], references: [id], onDelete: Cascade)
-  receiver   User     @relation("received", fields: [receiverId], references: [id], onDelete: Cascade)
-  listing    Listing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
-  text       String
-  isRead     Boolean  @default(false)
-  createdAt  DateTime @default(now())
+  id                 String   @id @default(cuid())
+  senderId           String
+  receiverId         String
+  listingId          String?
+  sender             User     @relation("sent", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver           User     @relation("received", fields: [receiverId], references: [id], onDelete: Cascade)
+  listing            Listing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  text               String
+  isRead             Boolean  @default(false)
+  editedAt           DateTime?
+  deletedForSender   Boolean  @default(false)
+  deletedForReceiver Boolean  @default(false)
+  createdAt          DateTime @default(now())
   @@index([receiverId, isRead])
+}
+
+model Block {
+  id        String   @id @default(cuid())
+  blockerId String
+  blockedId String
+  blocker   User     @relation("blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked   User     @relation("blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@unique([blockerId, blockedId])
 }
 
 model Report {

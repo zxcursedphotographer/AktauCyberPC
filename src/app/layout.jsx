@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { logout, resendVerify } from "./actions";
 import ThemeToggle from "@/components/ThemeToggle";
 import Avatar from "@/components/Avatar";
+import UserMenu from "@/components/UserMenu";
 
 export const metadata = { title: "AktauCyberPC — б/у ПК и комплектующие с проверкой", description: "Покупайте железо с результатами тестов" };
 
@@ -27,8 +28,12 @@ export default async function RootLayout({ children }) {
             {isStaff(me) && <Link href="/admin" className="flex items-center gap-1 text-sm"><Shield size={16} /> Админка</Link>}
             {me && <Link href="/chat" className="relative flex items-center gap-1 text-sm" title="Сообщения"><MessageSquare size={16} /><span className="hidden sm:inline">Сообщения</span>{unread > 0 && <b className="rounded-full bg-hot px-1.5 text-xs text-white">{unread}</b>}</Link>}
             <ThemeToggle />
-            {me ? <form action={logout} className="flex items-center gap-2 text-sm"><Link href={`/u/${me.username}`} className="flex items-center gap-2 font-semibold"><Avatar user={me} size={26} />{me.username}</Link><button className="underline">Выйти</button></form>
-                : <Link href="/login" className="btn">Войти</Link>}
+            {me ? (
+              <div className="flex items-center gap-2">
+                <Avatar user={me} size={26} />
+                <UserMenu username={me.username} logoutAction={logout} />
+              </div>
+            ) : <Link href="/login" className="btn">Войти</Link>}
           </nav>
         </header>
         {me && !mailOk(me) && <form action={resendVerify} className="bg-amber-500/20 p-2 text-center text-sm">Подтвердите почту ({me.email}), чтобы публиковать объявления и писать в чат. <button className="underline">Отправить письмо ещё раз</button></form>}

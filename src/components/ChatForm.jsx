@@ -1,15 +1,19 @@
 "use client";
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { sendMessage } from "@/app/actions";
+import { sendMessage, sendSupport } from "@/app/actions";
 
-export default function ChatForm({ listingId, receiverId }) {
+export default function ChatForm({ listingId, receiverId, mode = "listing" }) {
   const ref = useRef(null);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
   async function handleSubmit(formData) {
-    await sendMessage(formData);
+    if (mode === "support") {
+      await sendSupport(formData);
+    } else {
+      await sendMessage(formData);
+    }
     ref.current?.reset();
     startTransition(() => {
       router.refresh();
@@ -18,7 +22,7 @@ export default function ChatForm({ listingId, receiverId }) {
 
   return (
     <form ref={ref} action={handleSubmit} className="mt-3 flex gap-2">
-      <input type="hidden" name="listingId" value={listingId} />
+      {mode !== "support" && <input type="hidden" name="listingId" value={listingId || ""} />}
       <input type="hidden" name="receiverId" value={receiverId} />
       <input
         name="text"

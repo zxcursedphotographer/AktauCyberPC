@@ -10,7 +10,6 @@ import { allow, ip } from "@/lib/limit";
 import { sendMail } from "@/lib/mail";
 import { saveFile } from "@/lib/upload";
 
-// Капча: простая математика (для продакшена замените на Turnstile/hCaptcha)
 const captchaOk = (f) => Number(f.get("a")) + Number(f.get("b")) === Number(f.get("answer"));
 
 export async function login(_, f) {
@@ -37,12 +36,85 @@ export async function register(_, f) {
 
 export async function logout() { cookies().delete("s"); redirect("/"); }
 
+// ---------- Чат ----------
 export async function sendMessage(f) {
   const me = await getUser(); if (!me) redirect("/login");
   const text = String(f.get("text")).trim().slice(0, 2000); if (!text) return;
   if (!mailOk(me) || !(await allow(`msg:${me.id}`, 20, 60))) return;
-  await prisma.message.create({ data: { senderId: me.id, receiverId: f.get("receiverId"), listingId: f.get("listingId"), text } });
+  const receiverId = f.get("receiverId");
+  const blocked = await prisma.block.findFirst({
+    where: { OR: [{ blockerId: receiverId, blockedId: me.id }, { blockerId: me.id, blockedId: receiverId }] },
+  });
+  if (blocked) return;
+  await prisma.message.create({ data: { senderId: me.id, receiverId, listingId: f.get("listingId") || null, text } });
   revalidatePath(`/listing/${f.get("listingId")}`);
+  revalidatePath("/chat");
+}
+
+export async function editMessage(f) {
+  const me = await getUser(); if (!me) return;
+  const id = f.get("id"), text = String(f.get("text")).trim().slice(0, 2000);
+  if (!text) return;
+  const m = await prisma.message.findUnique({ where: { id } });
+  if (!m || m.senderId !== me.id) return;
+  await prisma.message.update({ where: { id }, data: { text, editedAt: new Date() } });
+  revalidatePath("/chat");
+}
+
+export async function deleteMessage(f) {
+  const me = await getUser(); if (!me) return;
+  const id = f.get("id");
+  const m = await prisma.message.findUnique({ where: { id } });
+  if (!m) return;
+  if (m.senderId === me.id) {
+    await prisma.message.update({ where: { id }, data: { deletedForSender: true } });
+  } else if (m.receiverId === me.id) {
+    await prisma.message.update({ where: { id }, data: { deletedForReceiver: true } });
+  }
+  revalidatePath("/chat");
+}
+
+export async function deleteChat(f) {
+  const me = await getUser(); if (!me) return;
+  const listingId = f.get("listingId") || null;
+  const otherId = f.get("otherId");
+  if (!otherId) return;
+  const where = {
+    OR: [
+      { senderId: me.id, receiverId: otherId },
+      { senderId: otherId, receiverId: me.id },
+    ],
+    ...(listingId ? { listingId } : {}),
+  };
+  const msgs = await prisma.message.findMany({ where });
+  for (const m of msgs) {
+    if (m.senderId === me.id && !m.deletedForSender) {
+      await prisma.message.update({ where: { id: m.id }, data: { deletedForSender: true } });
+    } else if (m.receiverId === me.id && !m.deletedForReceiver) {
+      await prisma.message.update({ where: { id: m.id }, data: { deletedForReceiver: true } });
+    }
+  }
+  revalidatePath("/chat");
+  redirect("/chat");
+}
+
+export async function blockUser(f) {
+  const me = await getUser(); if (!me) return;
+  const blockedId = f.get("userId");
+  if (!blockedId || blockedId === me.id) return;
+  await prisma.block.upsert({
+    where: { blockerId_blockedId: { blockerId: me.id, blockedId } },
+    create: { blockerId: me.id, blockedId },
+    update: {},
+  });
+  revalidatePath("/chat");
+  redirect("/chat");
+}
+
+export async function unblockUser(f) {
+  const me = await getUser(); if (!me) return;
+  const blockedId = f.get("userId");
+  await prisma.block.deleteMany({ where: { blockerId: me.id, blockedId } });
   revalidatePath("/chat");
 }
 
@@ -73,7 +145,6 @@ export async function setAccountStatus(f) {
   revalidatePath("/admin");
 }
 
-// Подтверждение жалобы на геолокацию -> продавец UNDER_REVIEW
 export async function resolveReport(f) {
   const me = await getUser(); if (me?.role !== "ADMIN" && me?.role !== "SUPER_ADMIN") throw new Error("Forbidden");
   const r = await prisma.report.findUnique({ where: { id: f.get("id") } }); if (!r) return;
@@ -96,6 +167,19 @@ export async function updateProfile(f) {
   const u = await prisma.user.update({ where: { id }, data });
   revalidatePath(`/u/${u.username}`);
 }
+
+export async function updateUsername(f) {
+  const me = await getUser(); if (!me) return;
+  const username = String(f.get("username") || "").trim().toLowerCase();
+  if (!/^[a-z0-9_]{3,20}$/.test(username)) return;
+  if (username === me.username) return;
+  const taken = await prisma.user.findUnique({ where: { username } });
+  if (taken) return;
+  await prisma.user.update({ where: { id: me.id }, data: { username } });
+  revalidatePath("/");
+  revalidatePath(`/u/${username}`);
+}
+
 export async function removeMedia(f) {
   const me = await getUser(), id = f.get("id"), field = f.get("field");
   if (!me || (me.id !== id && me.role !== "SUPER_ADMIN") || !["avatarUrl", "bannerUrl"].includes(field)) throw new Error("Forbidden");
@@ -111,7 +195,6 @@ export async function setTrust(f) {
 }
 export async function addReview(f) {
   const me = await getUser(), id = f.get("id"); if (!me || me.id === id) return;
-  // Отзыв только после сделки: продавец отметил объявление проданным этому покупателю (владелец платформы — без ограничений)
   const deal = me.role === "SUPER_ADMIN" || (await prisma.listing.count({ where: { userId: id, buyerId: me.id, status: "SOLD" } })) > 0;
   if (!deal || !mailOk(me) || !(await allow(`rev:${me.id}`, 10, 3600))) return;
   const rating = Math.min(10, Math.max(1, +f.get("rating") || 10));
@@ -194,8 +277,13 @@ export async function sendSupport(f) {
   const to = await prisma.user.findUnique({ where: { id: f.get("receiverId") } }), text = String(f.get("text")).trim().slice(0, 2000);
   if (!to || !text || (me.role !== "SUPER_ADMIN" && to.role !== "SUPER_ADMIN")) return;
   if (!(await allow(`sup:${me.id}`, 20, 60))) return;
+  const blocked = await prisma.block.findFirst({
+    where: { OR: [{ blockerId: to.id, blockedId: me.id }, { blockerId: me.id, blockedId: to.id }] },
+  });
+  if (blocked) return;
   await prisma.message.create({ data: { senderId: me.id, receiverId: to.id, text } });
   revalidatePath("/review");
+  revalidatePath("/support");
 }
 
 // ---------- Почта, сброс пароля, продажа ----------

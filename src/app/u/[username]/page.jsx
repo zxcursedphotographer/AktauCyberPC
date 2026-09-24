@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getUser } from "@/lib/auth";
-import { updateProfile, removeMedia, setTrust, addReview } from "@/app/actions";
+import { updateProfile, removeMedia, setTrust, addReview, updateUsername } from "@/app/actions";
 import TrustBadge from "@/components/TrustBadge";
 import Avatar from "@/components/Avatar";
 import ImageInput from "@/components/ImageInput";
@@ -31,8 +31,14 @@ export default async function Profile({ params }) {
       {u.status !== "ACTIVE" && <p className="mt-2 text-sm text-amber-500">Статус аккаунта: {u.status}</p>}
 
       {edit && (
-        <details className="card mt-4"><summary className="cursor-pointer font-semibold">Редактировать профиль</summary>
-          <form action={updateProfile} className="mt-3 space-y-2">
+        <details id="edit" className="card mt-4"><summary className="cursor-pointer font-semibold">Редактировать профиль</summary>
+          <form action={updateUsername} className="mt-3 flex flex-wrap gap-2">
+            <input name="username" defaultValue={u.username} placeholder="Новый ник" className="input flex-1" minLength={3} maxLength={20} required />
+            <button className="btn">Сменить ник</button>
+          </form>
+          <p className="mt-1 text-xs opacity-60">Ник: 3–20 символов, только латиница, цифры и _</p>
+          <hr className="my-3 border-white/10" />
+          <form action={updateProfile} className="space-y-2">
             <input type="hidden" name="id" value={u.id} />
             <label className="block text-sm">Аватар: 400×400 px, до 5 МБ<ImageInput name="avatar" className="input" /></label>
             <label className="block text-sm">Баннер: 1500×400 px (15:4), до 5 МБ<ImageInput name="banner" className="input" /></label>
@@ -60,7 +66,7 @@ export default async function Profile({ params }) {
           </Link>))}
       </div>
 
-      <h2 className="mb-2 mt-6 text-lg font-bold">Отзывы ({u.reviewsGot.length})</h2>
+      <h2 id="reviews" className="mb-2 mt-6 text-lg font-bold">Отзывы ({u.reviewsGot.length})</h2>
       {me && !own && !canReview && <p className="mb-3 text-sm opacity-70">Оставить отзыв можно после сделки: продавец отмечает объявление проданным и выбирает вас покупателем.</p>}
       {canReview && (
         <form action={addReview} className="card mb-3 flex flex-wrap gap-2">
