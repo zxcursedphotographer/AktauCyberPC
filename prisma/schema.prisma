@@ -1,0 +1,183 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  UNDER_REVIEW
+  BANNED
+}
+
+enum ListingStatus {
+  DRAFT
+  PUBLISHED
+  UNDER_REVIEW
+  SOLD
+}
+
+enum ComponentType {
+  GPU
+  CPU
+  RAM
+  STORAGE
+  MOTHERBOARD
+}
+
+enum TestResult {
+  PASSED
+  FAILED
+}
+
+enum ReportStatus {
+  PENDING
+  RESOLVED
+  REJECTED
+}
+
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  passwordHash String
+  username     String        @unique
+  role         Role          @default(USER)
+  status       AccountStatus @default(ACTIVE)
+  avatarUrl    String?
+  bannerUrl    String?
+  country      String?
+  city         String?
+  district     String?
+  rating       Float         @default(0)
+  createdAt    DateTime      @default(now())
+  bio          String?
+  emailVerified Boolean      @default(false)
+  tokens       Token[]
+  trustScore   Int           @default(50)
+  reviewsGiven Review[]      @relation("author")
+  reviewsGot   Review[]      @relation("about")
+  listings     Listing[]
+  sent         Message[]     @relation("sent")
+  received     Message[]     @relation("received")
+  reportsMade  Report[]      @relation("reporter")
+  reportsOn    Report[]      @relation("target")
+  adminLogs    AdminLog[]
+}
+
+model Listing {
+  id          String        @id @default(cuid())
+  title       String
+  description String
+  price       Int
+  category    String
+  status      ListingStatus @default(PUBLISHED)
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  city        String
+  district    String
+  viewsCount  Int           @default(0)
+  buyerId     String?
+  createdAt   DateTime      @default(now())
+  images      ListingImage[]
+  tests       ComponentTest[]
+  messages    Message[]
+  reports     Report[]
+  @@index([status, category, city])
+}
+
+model ListingImage {
+  id        String  @id @default(cuid())
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  url       String
+  order     Int     @default(0)
+}
+
+model ComponentTest {
+  id            String        @id @default(cuid())
+  listingId     String
+  listing       Listing       @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  componentType ComponentType
+  testTitle     String
+  resultStatus  TestResult
+  metrics       Json
+  mediaUrls     String[]
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  senderId   String
+  receiverId String
+  listingId  String?
+  sender     User     @relation("sent", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver   User     @relation("received", fields: [receiverId], references: [id], onDelete: Cascade)
+  listing    Listing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  text       String
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  @@index([receiverId, isRead])
+}
+
+model Report {
+  id           String       @id @default(cuid())
+  reporterId   String
+  targetUserId String
+  listingId    String?
+  reporter     User         @relation("reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  target       User         @relation("target", fields: [targetUserId], references: [id], onDelete: Cascade)
+  listing      Listing?     @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  reason       String
+  status       ReportStatus @default(PENDING)
+  createdAt    DateTime     @default(now())
+}
+
+model AdminLog {
+  id         String   @id @default(cuid())
+  adminId    String
+  admin      User     @relation(fields: [adminId], references: [id])
+  actionType String
+  targetId   String
+  reason     String?
+  details    String?
+  createdAt  DateTime @default(now())
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  authorId  String
+  targetId  String
+  author    User     @relation("author", fields: [authorId], references: [id], onDelete: Cascade)
+  target    User     @relation("about", fields: [targetId], references: [id], onDelete: Cascade)
+  rating    Int
+  pinned    Boolean  @default(false)
+  text      String
+  createdAt DateTime @default(now())
+}
+
+model Token {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  type      String
+  expiresAt DateTime
+}
+
+model RateLog {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+}

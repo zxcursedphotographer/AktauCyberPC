@@ -1,0 +1,36 @@
+"use client";
+import { useState } from "react";
+import { CheckCircle2, XCircle } from "lucide-react";
+
+const LABEL = { GPU: "Видеокарта", CPU: "Процессор", RAM: "Память", STORAGE: "Накопитель", MOTHERBOARD: "Материнская плата" };
+const HINT = { GPU: "FurMark / Superposition", CPU: "AIDA64 / OCCT", RAM: "TestMem5 / OCCT", STORAGE: "CrystalDiskInfo (S.M.A.R.T.)", MOTHERBOARD: "AIDA64" };
+
+export default function TestTabs({ tests }) {
+  const types = [...new Set(tests.map((t) => t.componentType))];
+  const [tab, setTab] = useState(types[0]);
+  if (!types.length) return <p className="card">Продавец пока не добавил тесты.</p>;
+  return (
+    <section className="card">
+      <div role="tablist" className="mb-4 flex flex-wrap gap-2">
+        {types.map((t) => <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
+          className={`rounded-lg px-3 py-1.5 text-sm ${tab === t ? "bg-accent text-white" : "bg-slate-200 dark:bg-white/10"}`}>{LABEL[t]}</button>)}
+      </div>
+      {tests.filter((t) => t.componentType === tab).map((t) => (
+        <div key={t.id} className="mb-4">
+          <div className="flex items-center gap-2 font-semibold">
+            {t.resultStatus === "PASSED" ? <CheckCircle2 className="text-emerald-500" size={18} /> : <XCircle className="text-hot" size={18} />}
+            {t.testTitle}<span className="text-xs font-normal opacity-60">({HINT[t.componentType]})</span>
+          </div>
+          <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+            {Object.entries(t.metrics).filter(([, v]) => !Array.isArray(v)).map(([k, v]) => <div key={k} className="flex justify-between border-b border-white/5 py-1"><dt className="opacity-70">{k}</dt><dd className="font-medium">{String(v)}</dd></div>)}
+          </dl>
+          {Object.entries(t.metrics).filter(([, v]) => Array.isArray(v)).map(([k, v]) => (
+            <div key={k} className="mt-4"><p className="mb-1 text-xs opacity-60">Температура во времени, °C</p>
+              <div className="flex h-24 items-end gap-1">{v.map((n, i) => <div key={i} title={`${n}°C`} style={{ height: `${Math.min(100, n)}%` }} className={`flex-1 rounded-t ${n > 80 ? "bg-hot" : "bg-accent"}`} />)}</div></div>
+          ))}
+          {t.mediaUrls.length > 0 && <div className="mt-3 flex gap-2">{t.mediaUrls.map((u) => <img key={u} src={u} alt="Скриншот теста" className="h-24 rounded" />)}</div>}
+        </div>
+      ))}
+    </section>
+  );
+}
