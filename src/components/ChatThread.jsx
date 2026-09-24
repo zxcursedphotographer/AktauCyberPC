@@ -36,11 +36,11 @@ export default function ChatThread({ meId, initial }) {
                   <input
                     name="text"
                     defaultValue={m.text}
-                    className="input !py-0.5 !text-inherit"
+                    className="input !py-0.5"
                     autoFocus
                   />
-                  <button className="rounded bg-white/20 px-2 text-xs">OK</button>
-                  <button type="button" onClick={() => setEditingId(null)} className="rounded bg-white/20 px-2 text-xs">✕</button>
+                  <button className="rounded bg-white/20 px-2 text-xs text-white">OK</button>
+                  <button type="button" onClick={() => setEditingId(null)} className="rounded bg-white/20 px-2 text-xs text-white">✕</button>
                 </form>
               ) : (
                 <span>{m.text}</span>
@@ -59,10 +59,10 @@ export default function ChatThread({ meId, initial }) {
                   title="Действия"
                 >⋮</button>
                 {menuId === m.id && (
-                  <div className="absolute right-0 top-full z-10 w-32 rounded-lg border border-white/10 bg-panel p-1 text-left text-xs">
+                  <div className="absolute right-0 top-full z-10 w-32 rounded-lg border border-white/10 bg-panel p-1 text-left text-xs shadow-lg">
                     <button
                       onClick={() => { setEditingId(m.id); setMenuId(null); }}
-                      className="block w-full rounded px-2 py-1 text-left hover:bg-white/10"
+                      className="block w-full rounded px-2 py-1 text-left text-slate-700 hover:bg-white/10 dark:text-slate-100"
                     >Изменить</button>
                     <form action={deleteMessage}>
                       <input type="hidden" name="id" value={m.id} />
