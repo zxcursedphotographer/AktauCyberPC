@@ -172,6 +172,116 @@ export async function restoreListing(f) {
   revalidatePath(`/u/${l.userId}`);
 }
 
+// ---------- Апелляции ----------
+export async function appealListing(f) {
+  const me = await getUser(); if (!me) return { error: "Не авторизован" };
+  const id = f.get("id");
+  const message = String(f.get("message") || "").trim().slice(0, 500);
+  const l = await prisma.listing.findUnique({ where: { id } });
+  if (!l || l.userId !== me.id) return { error: "Объявление не найдено" };
+  if (l.status !== "DELETED") return { error: "Апелляция доступна только для удалённых объявлений" };
+  if (message.length < 10) return { error: "Опишите, что вы исправили (минимум 10 символов)" };
+  if (!(await allow(`appeal:${me.id}`, 3, 3600))) return { error: "Слишком много апелляций. Подождите час." };
+
+  const title = String(f.get("title") || "").trim();
+  const description = String(f.get("description") || "").trim();
+  const price = Math.min(2000000000, Math.max(0, Math.round(+f.get("price") || 0)));
+  const data = {
+    status: "APPEAL",
+    appealMessage: message,
+    appealAt: new Date(),
+    previousReason: l.deletedReason,
+  };
+  if (title && title !== l.title) data.title = title.slice(0, 120);
+  if (description && description !== l.description) data.description = description.slice(0, 5000);
+  if (price && price !== l.price) data.price = price;
+
+  const newPhotos = (await Promise.all((f.getAll("photos") || []).map(saveFile))).filter(Boolean);
+
+  await prisma.$transaction([
+    prisma.listing.update({ where: { id }, data }),
+    ...(newPhotos.length > 0
+      ? [prisma.listingImage.createMany({ data: newPhotos.map((url, i) => ({ listingId: id, url, order: 100 + i })) })]
+      : []),
+    prisma.adminLog.create({ data: { adminId: me.id, actionType: "APPEAL_SENT", targetId: id, details: message } }),
+  ]);
+
+  const admin = await prisma.user.findFirst({ where: { role: "SUPER_ADMIN" } });
+  if (admin) {
+    await prisma.message.create({
+      data: {
+        senderId: me.id,
+        receiverId: admin.id,
+        listingId: id,
+        text: `📩 Апелляция по объявлению «${l.title}»:\n\n${message}`,
+      },
+    });
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/listings");
+  revalidatePath(`/u/${me.username}`);
+  revalidatePath(`/listing/${id}`);
+  return { ok: true };
+}
+
+export async function approveAppeal(f) {
+  const me = await getUser(); if (me?.role !== "SUPER_ADMIN") throw new Error("Forbidden");
+  const id = f.get("id");
+  const l = await prisma.listing.findUnique({ where: { id } });
+  if (!l || l.status !== "APPEAL") return;
+
+  await prisma.$transaction([
+    prisma.listing.update({
+      where: { id },
+      data: { status: "PUBLISHED", deletedReason: null, deletedAt: null, appealMessage: null, appealAt: null, previousReason: null },
+    }),
+    prisma.adminLog.create({ data: { adminId: me.id, actionType: "APPEAL_APPROVED", targetId: id, details: l.title } }),
+    prisma.message.create({
+      data: {
+        senderId: me.id,
+        receiverId: l.userId,
+        listingId: id,
+        text: `✅ Ваша апелляция по объявлению «${l.title}» одобрена. Объявление снова опубликовано.`,
+      },
+    }),
+  ]);
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/listings");
+  revalidatePath("/");
+  revalidatePath(`/listing/${id}`);
+  revalidatePath(`/u/${l.userId}`);
+}
+
+export async function rejectAppeal(f) {
+  const me = await getUser(); if (me?.role !== "SUPER_ADMIN") throw new Error("Forbidden");
+  const id = f.get("id");
+  const reason = REASONS[f.get("reason")] || "Апелляция отклонена без указания причины";
+  const l = await prisma.listing.findUnique({ where: { id } });
+  if (!l || l.status !== "APPEAL") return;
+
+  await prisma.$transaction([
+    prisma.listing.update({
+      where: { id },
+      data: { status: "DELETED", deletedReason: reason, deletedAt: new Date(), appealMessage: null, appealAt: null },
+    }),
+    prisma.adminLog.create({ data: { adminId: me.id, actionType: "APPEAL_REJECTED", targetId: id, reason, details: l.title } }),
+    prisma.message.create({
+      data: {
+        senderId: me.id,
+        receiverId: l.userId,
+        listingId: id,
+        text: `❌ Ваша апелляция по объявлению «${l.title}» отклонена.\n\nПричина: ${reason}`,
+      },
+    }),
+  ]);
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/listings");
+  revalidatePath(`/u/${l.userId}`);
+}
+
 export async function setAccountStatus(f) {
   const me = await getUser(); if (me?.role !== "SUPER_ADMIN") throw new Error("Forbidden");
   const status = f.get("status"), id = f.get("id"); if (id === me.id) return;

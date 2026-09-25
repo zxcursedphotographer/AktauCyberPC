@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { deleteListing, restoreListing } from "@/app/actions";
+import { deleteListing, restoreListing, approveAppeal, rejectAppeal } from "@/app/actions";
 import Avatar from "@/components/Avatar";
 
 export const metadata = { title: "Объявления — Админка" };
@@ -11,6 +11,7 @@ const STATUS_BADGE = {
   DELETED: { label: "Удалено", cls: "bg-slate-500/20 text-slate-400" },
   UNDER_REVIEW: { label: "На проверке", cls: "bg-amber-500/20 text-amber-400" },
   DRAFT: { label: "Черновик", cls: "bg-slate-500/20 text-slate-400" },
+  APPEAL: { label: "Апелляция", cls: "bg-amber-500/30 text-amber-300" },
 };
 
 export default async function AdminListings({ searchParams }) {
@@ -34,6 +35,7 @@ export default async function AdminListings({ searchParams }) {
   const filters = [
     { key: "", label: `Все (${total})` },
     { key: "PUBLISHED", label: `Активные (${countMap.PUBLISHED || 0})` },
+    { key: "APPEAL", label: `Апелляции (${countMap.APPEAL || 0})` },
     { key: "SOLD", label: `Проданные (${countMap.SOLD || 0})` },
     { key: "DELETED", label: `Удалённые (${countMap.DELETED || 0})` },
     { key: "UNDER_REVIEW", label: `На проверке (${countMap.UNDER_REVIEW || 0})` },
@@ -54,7 +56,9 @@ export default async function AdminListings({ searchParams }) {
             className={`rounded-lg px-3 py-1.5 text-sm transition ${
               statusFilter === f.key
                 ? "bg-accent text-white shadow-lg shadow-accent/30"
-                : "bg-white/5 hover:bg-white/10"
+                : f.key === "APPEAL" && (countMap.APPEAL || 0) > 0
+                  ? "bg-amber-500/20 text-amber-300 hover:bg-amber-500/30"
+                  : "bg-white/5 hover:bg-white/10"
             }`}
           >
             {f.label}
@@ -101,7 +105,7 @@ export default async function AdminListings({ searchParams }) {
                     </span>
                   </td>
                   <td className="p-3">
-                    {l.status === "DELETED" ? (
+                    {l.status === "DELETED" && (
                       <div className="flex items-center gap-2">
                         <span className="max-w-[240px] truncate text-xs opacity-60" title={l.deletedReason || ""}>
                           {l.deletedReason || "без причины"}
@@ -113,7 +117,44 @@ export default async function AdminListings({ searchParams }) {
                           </button>
                         </form>
                       </div>
-                    ) : (
+                    )}
+
+                    {l.status === "APPEAL" && (
+                      <div className="space-y-2">
+                        <div className="rounded-lg border border-hot/30 bg-hot/5 p-2 text-xs">
+                          <b className="block text-hot">Изначальная причина:</b>
+                          <span className="opacity-90">{l.previousReason || l.deletedReason || "не указана"}</span>
+                        </div>
+                        {l.appealMessage && (
+                          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 text-xs">
+                            <b className="block text-amber-300">Комментарий пользователя:</b>
+                            <span className="opacity-90">{l.appealMessage}</span>
+                          </div>
+                        )}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <form action={approveAppeal}>
+                            <input type="hidden" name="id" value={l.id} />
+                            <button className="rounded-lg border border-emerald-500/40 px-2 py-1 text-xs text-emerald-400 hover:bg-emerald-500/10">
+                              ✅ Одобрить
+                            </button>
+                          </form>
+                          <form action={rejectAppeal} className="flex items-center gap-1">
+                            <input type="hidden" name="id" value={l.id} />
+                            <select name="reason" required className="input !w-44 !py-1 !text-xs">
+                              <option value="">Причина…</option>
+                              <option value="1">Не соответствует проверкам</option>
+                              <option value="2">Неправильное оформление</option>
+                              <option value="3">Мошенничество</option>
+                            </select>
+                            <button className="rounded-lg border border-hot/40 px-2 py-1 text-xs text-hot hover:bg-hot/10">
+                              ❌ Отклонить
+                            </button>
+                          </form>
+                        </div>
+                      </div>
+                    )}
+
+                    {(l.status === "PUBLISHED" || l.status === "UNDER_REVIEW" || l.status === "SOLD" || l.status === "DRAFT") && (
                       <form action={deleteListing} className="flex items-center gap-2">
                         <input type="hidden" name="id" value={l.id} />
                         <select name="reason" required className="input !w-48 !py-1 !text-xs">
