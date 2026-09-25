@@ -2,12 +2,17 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getUser } from "@/lib/auth";
-import { updateProfile, removeMedia, setTrust, addReview, updateUsername } from "@/app/actions";
+import { updateProfile, removeMedia, setTrust, addReview, updateUsername, resubmitListing } from "@/app/actions";
 import TrustBadge from "@/components/TrustBadge";
 import Avatar from "@/components/Avatar";
 import ImageInput from "@/components/ImageInput";
 import AppealModal from "@/components/AppealModal";
-import { Package, ShoppingBag, Trash2, Star, MapPin, Calendar, Settings, Shield, Send, Clock } from "lucide-react";
+import ListingSelector from "@/components/ListingSelector";
+import ListingCard from "@/components/ListingCard";
+import {
+  Package, ShoppingBag, Trash2, Star, MapPin, Calendar, Settings, Shield,
+  Clock, EyeOff, AlertTriangle, CheckCircle2, Send,
+} from "lucide-react";
 
 const STATUS_INFO = {
   ACTIVE: { label: "Активен", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30", dot: "bg-emerald-400" },
@@ -41,42 +46,63 @@ export default async function Profile({ params, searchParams }) {
   const sa = me?.role === "SUPER_ADMIN", own = me?.id === u.id, edit = own || sa;
   const canReview = me && !own && (sa || (await prisma.listing.count({ where: { userId: u.id, buyerId: me.id, status: "SOLD" } })) > 0);
 
-  const activeListings = u.listings.filter((l) => l.status === "PUBLISHED" || l.status === "UNDER_REVIEW" || l.status === "DRAFT");
+  // Разбивка по статусам
+  const activeListings = u.listings.filter((l) => l.status === "PUBLISHED" || l.status === "DRAFT");
+  const underReviewListings = u.listings.filter((l) => l.status === "UNDER_REVIEW");
+  const needsEditListings = u.listings.filter((l) => l.status === "NEEDS_EDIT");
   const soldListings = u.listings.filter((l) => l.status === "SOLD");
-  // Во вкладке «Удалённые» показываем и удалённые, и те, что на апелляции — чтобы пользователь видел историю
   const deletedListings = u.listings.filter((l) => l.status === "DELETED" || l.status === "APPEAL");
+  const hiddenListings = u.listings.filter((l) => l.status === "HIDDEN");
 
-  const tab = searchParams.tab === "sold" ? "sold" : searchParams.tab === "deleted" ? "deleted" : "active";
-  const shown = tab === "sold" ? soldListings : tab === "deleted" ? deletedListings : activeListings;
+  const tabParam = searchParams.tab;
+  const tab =
+    tabParam === "review" ? "review"
+    : tabParam === "needs_edit" ? "needs_edit"
+    : tabParam === "sold" ? "sold"
+    : tabParam === "deleted" ? "deleted"
+    : tabParam === "hidden" ? "hidden"
+    : "active";
+
+  const shown =
+    tab === "review" ? underReviewListings
+    : tab === "needs_edit" ? needsEditListings
+    : tab === "sold" ? soldListings
+    : tab === "deleted" ? deletedListings
+    : tab === "hidden" ? hiddenListings
+    : activeListings;
 
   const status = STATUS_INFO[u.status] || STATUS_INFO.ACTIVE;
 
   const tabs = [
     { key: "active", label: "Активные", count: activeListings.length, icon: Package, href: `/u/${u.username}` },
+    ...(edit ? [
+      { key: "review", label: "На модерации", count: underReviewListings.length, icon: Clock, href: `/u/${u.username}?tab=review` },
+      ...(needsEditListings.length > 0 ? [{ key: "needs_edit", label: "Требует правок", count: needsEditListings.length, icon: AlertTriangle, href: `/u/${u.username}?tab=needs_edit` }] : []),
+    ] : []),
     { key: "sold", label: "Проданные", count: soldListings.length, icon: ShoppingBag, href: `/u/${u.username}?tab=sold` },
-    ...(edit ? [{ key: "deleted", label: "Удалённые", count: deletedListings.length, icon: Trash2, href: `/u/${u.username}?tab=deleted` }] : []),
+    ...(edit ? [
+      { key: "hidden", label: "Скрытые", count: hiddenListings.length, icon: EyeOff, href: `/u/${u.username}?tab=hidden` },
+      { key: "deleted", label: "Удалённые", count: deletedListings.length, icon: Trash2, href: `/u/${u.username}?tab=deleted` },
+    ] : []),
   ];
+
+  const selectable = edit && (tab === "active" || tab === "hidden");
 
   return (
     <div className="mx-auto max-w-6xl">
-      {/* Баннер */}
       <div className="relative h-40 overflow-hidden rounded-2xl bg-gradient-to-r from-accent to-hot md:h-56">
         {u.bannerUrl && <img src={u.bannerUrl} alt="" className="h-full w-full object-cover" />}
       </div>
 
       <div className="grid gap-6 px-4 md:grid-cols-[320px_1fr] md:px-0">
-        {/* ЛЕВАЯ КОЛОНКА — САЙДБАР */}
         <aside className="md:-mt-16">
           <div className="flex flex-col items-center text-center md:items-start md:text-left">
-            {/* Аватар — поверх баннера */}
             <div className="relative z-10 shrink-0 rounded-full border-4 border-slate-100 bg-slate-100 shadow-lg dark:border-[#0d0f17] dark:bg-[#0d0f17]">
               <Avatar user={u} size={112} />
             </div>
 
-            {/* Ник */}
             <h1 className="mt-3 text-2xl font-bold">{u.username}</h1>
 
-            {/* Инфо-строка */}
             <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm opacity-70 md:justify-start">
               {(u.city || u.district) && (
                 <span className="inline-flex items-center gap-1">
@@ -94,18 +120,15 @@ export default async function Profile({ params, searchParams }) {
               </span>
             </div>
 
-            {/* Trust Badge */}
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2 md:justify-start">
               <TrustBadge score={u.trustScore} size={40} label />
             </div>
 
-            {/* Статус аккаунта — badge */}
             <span className={`mt-2 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${status.cls}`}>
               <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
               Статус: {status.label}
             </span>
 
-            {/* Кнопка «Настройки профиля» */}
             {edit && (
               <a
                 href="#edit"
@@ -117,14 +140,12 @@ export default async function Profile({ params, searchParams }) {
             )}
           </div>
 
-          {/* Био */}
           {u.bio && (
             <div className="card mt-4">
               <p className="text-sm leading-relaxed">{u.bio}</p>
             </div>
           )}
 
-          {/* Траст-фактор для админа */}
           {sa && (
             <form action={setTrust} className="card mt-4 space-y-2">
               <input type="hidden" name="id" value={u.id} />
@@ -138,7 +159,6 @@ export default async function Profile({ params, searchParams }) {
             </form>
           )}
 
-          {/* Форма редактирования */}
           {edit && (
             <details id="edit" className="card mt-4">
               <summary className="cursor-pointer select-none font-semibold">Настройки профиля</summary>
@@ -156,11 +176,16 @@ export default async function Profile({ params, searchParams }) {
 
               <form action={updateProfile} className="space-y-3">
                 <input type="hidden" name="id" value={u.id} />
-                <label className="block text-xs font-semibold uppercase tracking-wider opacity-60">Аватар (400×400, до 5 МБ)</label>
-                <ImageInput name="avatar" className="input" />
 
-                <label className="block text-xs font-semibold uppercase tracking-wider opacity-60">Баннер (1500×400, до 5 МБ)</label>
-                <ImageInput name="banner" className="input" />
+                <label className="block text-xs font-semibold uppercase tracking-wider opacity-60">
+                  Аватар (400×400, до 5 МБ — 1 фото)
+                </label>
+                <ImageInput name="avatar" className="input" single />
+
+                <label className="block text-xs font-semibold uppercase tracking-wider opacity-60">
+                  Баннер (1500×400, до 5 МБ — 1 фото)
+                </label>
+                <ImageInput name="banner" className="input" single />
 
                 <label className="block text-xs font-semibold uppercase tracking-wider opacity-60">О себе</label>
                 <textarea name="bio" defaultValue={u.bio || ""} rows={3} maxLength={500} placeholder="О себе" className="input" />
@@ -182,9 +207,7 @@ export default async function Profile({ params, searchParams }) {
           )}
         </aside>
 
-        {/* ПРАВАЯ КОЛОНКА — ОСНОВНОЙ КОНТЕНТ */}
         <main className="min-w-0 space-y-6">
-          {/* Вкладки объявлений */}
           <div>
             <div className="flex gap-1 overflow-x-auto border-b border-slate-200/70 dark:border-white/10">
               {tabs.map((t) => {
@@ -204,7 +227,9 @@ export default async function Profile({ params, searchParams }) {
                       {t.count}
                     </span>
                     {active && (
-                      <span className={`absolute inset-x-0 -bottom-px h-0.5 rounded-full ${t.key === "deleted" ? "bg-hot" : "bg-accent"}`} />
+                      <span className={`absolute inset-x-0 -bottom-px h-0.5 rounded-full ${
+                        t.key === "deleted" ? "bg-hot" : t.key === "needs_edit" ? "bg-orange-500" : "bg-accent"
+                      }`} />
                     )}
                   </Link>
                 );
@@ -212,18 +237,28 @@ export default async function Profile({ params, searchParams }) {
             </div>
           </div>
 
-          {/* Объявления */}
           {shown.length === 0 ? (
             <EmptyState
-              icon={tab === "sold" ? ShoppingBag : tab === "deleted" ? Trash2 : Package}
+              icon={
+                tab === "sold" ? ShoppingBag
+                : tab === "hidden" ? EyeOff
+                : tab === "deleted" ? Trash2
+                : tab === "review" ? Clock
+                : tab === "needs_edit" ? AlertTriangle
+                : Package
+              }
               title={
                 tab === "sold" ? "Проданных объявлений нет"
+                : tab === "hidden" ? "Скрытых объявлений нет"
                 : tab === "deleted" ? "Удалённых объявлений нет"
+                : tab === "review" ? "Объявлений на модерации нет"
+                : tab === "needs_edit" ? "Объявлений на правках нет"
                 : "Активных объявлений нет"
               }
               subtitle={
                 tab === "active" && own ? "Разместите первое объявление — покупатели увидят вас в поиске."
-                : tab === "sold" ? "Проданные товары появятся здесь автоматически."
+                : tab === "review" ? "Как только админ одобрит — объявления появятся в активных."
+                : tab === "hidden" ? "Скрытые объявления не видны другим — вы можете вернуть их в любой момент."
                 : undefined
               }
               action={
@@ -233,109 +268,188 @@ export default async function Profile({ params, searchParams }) {
               }
             />
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {shown.map((l) => {
-                const isDeleted = l.status === "DELETED";
-                const isAppeal = l.status === "APPEAL";
-                return (
-                  <div key={l.id} className="group card relative flex flex-col overflow-hidden !p-0">
-                    {l.status === "SOLD" && (
-                      <span className="absolute left-2 top-2 z-10 rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white shadow-lg shadow-emerald-600/40">
-                        ПРОДАНО
-                      </span>
-                    )}
-                    {isDeleted && (
-                      <span className="absolute left-2 top-2 z-10 rounded-full bg-hot px-2 py-0.5 text-xs font-bold text-white shadow-lg shadow-hot/40">
-                        УДАЛЕНО
-                      </span>
-                    )}
-                    {isAppeal && (
-                      <span className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white shadow-lg shadow-amber-500/40">
-                        <Clock size={10} /> НА АПЕЛЛЯЦИИ
-                      </span>
-                    )}
+            <ListingSelector
+              items={shown.map((l) => ({ id: l.id }))}
+              mode={tab === "hidden" ? "hidden" : "active"}
+              selectable={selectable}
+            >
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {shown.map((l) => {
+                  const isDeleted = l.status === "DELETED";
+                  const isAppeal = l.status === "APPEAL";
+                  const isHidden = l.status === "HIDDEN";
+                  const isReview = l.status === "UNDER_REVIEW";
+                  const isNeedsEdit = l.status === "NEEDS_EDIT";
 
-                    {/* Обложка + контент */}
-                    {(isDeleted || isAppeal) ? (
-                      <div className="flex flex-1 flex-col p-3">
-                        {l.images[0] && (
-                          <img
-                            src={l.images[0].url}
-                            alt=""
-                            className={`mb-3 h-40 w-full rounded-lg object-cover ${isAppeal ? "opacity-60" : "opacity-40 grayscale"}`}
-                          />
-                        )}
-                        <b className="opacity-80">{l.title}</b>
-                        <p className="text-sm text-accent opacity-80">{l.price.toLocaleString("ru")} ₸</p>
+                  return (
+                    <ListingCard key={l.id} listing={{ id: l.id }}>
+                      {l.status === "SOLD" && (
+                        <span className="absolute left-2 top-2 z-10 rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white shadow-lg shadow-emerald-600/40">
+                          ПРОДАНО
+                        </span>
+                      )}
+                      {isDeleted && (
+                        <span className="absolute left-2 top-2 z-10 rounded-full bg-hot px-2 py-0.5 text-xs font-bold text-white shadow-lg shadow-hot/40">
+                          УДАЛЕНО
+                        </span>
+                      )}
+                      {isAppeal && (
+                        <span className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white shadow-lg shadow-amber-500/40">
+                          <Clock size={10} /> НА АПЕЛЛЯЦИИ
+                        </span>
+                      )}
+                      {isHidden && (
+                        <span className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-full bg-slate-600 px-2 py-0.5 text-xs font-bold text-white shadow-lg">
+                          <EyeOff size={10} /> СКРЫТО
+                        </span>
+                      )}
+                      {isReview && (
+                        <span className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white shadow-lg shadow-amber-500/40">
+                          <Clock size={10} /> НА МОДЕРАЦИИ
+                        </span>
+                      )}
+                      {isNeedsEdit && (
+                        <span className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-full bg-orange-500 px-2 py-0.5 text-xs font-bold text-white shadow-lg shadow-orange-500/40">
+                          <AlertTriangle size={10} /> ТРЕБУЕТ ПРАВОК
+                        </span>
+                      )}
 
-                        {/* Плашка причины удаления */}
-                        <div className="mt-2 rounded-lg border border-hot/40 bg-hot/10 p-2 text-xs">
-                          <b className="block text-hot">
-                            {isAppeal ? "Отправлена апелляция" : "Удалено администрацией"}
-                          </b>
-                          <span className="opacity-90">
-                            Причина: {l.previousReason || l.deletedReason || "не указана"}
-                          </span>
-                          {(isAppeal ? l.appealAt : l.deletedAt) && (
-                            <span className="block opacity-60">
-                              {new Date(isAppeal ? l.appealAt : l.deletedAt).toLocaleString("ru")}
+                      {(isDeleted || isAppeal) ? (
+                        <div className="flex flex-1 flex-col p-3">
+                          {l.images[0] && (
+                            <img
+                              src={l.images[0].url}
+                              alt=""
+                              className={`mb-3 h-40 w-full rounded-lg object-cover ${isAppeal ? "opacity-60" : "opacity-40 grayscale"}`}
+                            />
+                          )}
+                          <b className="opacity-80">{l.title}</b>
+                          <p className="text-sm text-accent opacity-80">{l.price.toLocaleString("ru")} ₸</p>
+
+                          <div className="mt-2 rounded-lg border border-hot/40 bg-hot/10 p-2 text-xs">
+                            <b className="block text-hot">
+                              {isAppeal ? "Отправлена апелляция" : "Удалено администрацией"}
+                            </b>
+                            <span className="opacity-90">
+                              Причина: {l.previousReason || l.deletedReason || "не указана"}
                             </span>
+                            {(isAppeal ? l.appealAt : l.deletedAt) && (
+                              <span className="block opacity-60">
+                                {new Date(isAppeal ? l.appealAt : l.deletedAt).toLocaleString("ru")}
+                              </span>
+                            )}
+                          </div>
+
+                          {isAppeal && l.appealMessage && (
+                            <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+                              <b className="block text-amber-400">Ваш комментарий:</b>
+                              <span className="opacity-90">{l.appealMessage}</span>
+                            </div>
+                          )}
+
+                          {own && isDeleted && (
+                            <div className="mt-auto pt-3">
+                              <AppealModal
+                                listing={{
+                                  id: l.id,
+                                  title: l.title,
+                                  description: l.description,
+                                  price: l.price,
+                                  deletedReason: l.deletedReason,
+                                  deletedAt: l.deletedAt?.toISOString?.() || l.deletedAt,
+                                }}
+                              />
+                            </div>
+                          )}
+                          {isAppeal && (
+                            <div className="mt-auto pt-3 text-center text-xs text-amber-400">
+                              ⏳ Ожидает проверки администратора
+                            </div>
                           )}
                         </div>
-
-                        {/* Комментарий апелляции (если уже отправлена) */}
-                        {isAppeal && l.appealMessage && (
-                          <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
-                            <b className="block text-amber-400">Ваш комментарий:</b>
-                            <span className="opacity-90">{l.appealMessage}</span>
-                          </div>
-                        )}
-
-                        {/* Кнопка апелляции — только для владельца, только для DELETED */}
-                        {own && isDeleted && (
-                          <div className="mt-auto pt-3">
-                            <AppealModal
-                              listing={{
-                                id: l.id,
-                                title: l.title,
-                                description: l.description,
-                                price: l.price,
-                                deletedReason: l.deletedReason,
-                                deletedAt: l.deletedAt?.toISOString?.() || l.deletedAt,
-                              }}
+                      ) : isReview ? (
+                        <div className="flex flex-1 flex-col p-3">
+                          {l.images[0] && (
+                            <img
+                              src={l.images[0].url}
+                              alt=""
+                              className="mb-3 h-40 w-full rounded-lg object-cover opacity-70"
                             />
+                          )}
+                          <b className="opacity-90">{l.title}</b>
+                          <p className="text-sm text-accent opacity-90">{l.price.toLocaleString("ru")} ₸</p>
+                          <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+                            <b className="block text-amber-400">⏳ Объявление на модерации</b>
+                            <span className="opacity-80">
+                              Обычно проверка занимает до 24 часов
+                            </span>
                           </div>
-                        )}
-                        {isAppeal && (
-                          <div className="mt-auto pt-3 text-center text-xs text-amber-400">
-                            ⏳ Ожидает проверки администратора
+                          <div className="mt-auto pt-3">
+                            <Link href={`/listing/${l.id}`} className="text-xs text-accent underline">
+                              Открыть объявление
+                            </Link>
                           </div>
-                        )}
-                      </div>
-                    ) : (
-                      <Link href={`/listing/${l.id}`} className="block transition group-hover:border-accent">
-                        {l.images[0] ? (
-                          <img
-                            src={l.images[0].url}
-                            alt=""
-                            className={`h-40 w-full object-cover transition group-hover:scale-[1.02] ${l.status === "SOLD" ? "opacity-60" : ""}`}
-                          />
-                        ) : (
-                          <div className="flex h-40 items-center justify-center bg-white/5 text-4xl opacity-30">📦</div>
-                        )}
-                        <div className="p-3">
-                          <b className={`line-clamp-1 ${l.status === "SOLD" ? "line-through opacity-60" : ""}`}>{l.title}</b>
-                          <p className="mt-1 text-accent">{l.price.toLocaleString("ru")} ₸</p>
                         </div>
-                      </Link>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                      ) : isNeedsEdit ? (
+                        <div className="flex flex-1 flex-col p-3">
+                          {l.images[0] && (
+                            <img
+                              src={l.images[0].url}
+                              alt=""
+                              className="mb-3 h-40 w-full rounded-lg object-cover opacity-70"
+                            />
+                          )}
+                          <b className="opacity-90">{l.title}</b>
+                          <p className="text-sm text-accent opacity-90">{l.price.toLocaleString("ru")} ₸</p>
+
+                          <div className="mt-2 rounded-lg border border-orange-500/40 bg-orange-500/10 p-2 text-xs">
+                            <b className="block text-orange-400">⚠️ Требует правок</b>
+                            {l.moderationNote && (
+                              <span className="mt-1 block opacity-90">{l.moderationNote}</span>
+                            )}
+                          </div>
+
+                          <div className="mt-auto flex flex-col gap-2 pt-3">
+                            <Link
+                              href={`/listing/${l.id}`}
+                              className="btn w-full justify-center !bg-accent py-1.5 text-xs"
+                            >
+                              Исправить
+                            </Link>
+                            <form action={resubmitListing}>
+                              <input type="hidden" name="id" value={l.id} />
+                              <button className="w-full rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20">
+                                <Send size={12} className="mr-1 inline" /> Отправить на проверку
+                              </button>
+                            </form>
+                          </div>
+                        </div>
+                      ) : (
+                        <Link href={`/listing/${l.id}`} className="block transition group-hover:border-accent">
+                          {l.images[0] ? (
+                            <img
+                              src={l.images[0].url}
+                              alt=""
+                              className={`h-40 w-full object-cover transition group-hover:scale-[1.02] ${
+                                isHidden ? "opacity-50 grayscale" : ""
+                              }`}
+                            />
+                          ) : (
+                            <div className="flex h-40 items-center justify-center bg-white/5 text-4xl opacity-30">📦</div>
+                          )}
+                          <div className="p-3">
+                            <b className="line-clamp-1">{l.title}</b>
+                            <p className="mt-1 text-accent">{l.price.toLocaleString("ru")} ₸</p>
+                          </div>
+                        </Link>
+                      )}
+                    </ListingCard>
+                  );
+                })}
+              </div>
+            </ListingSelector>
           )}
 
-          {/* Отзывы */}
           <section id="reviews">
             <h2 className="mb-3 flex items-center gap-2 text-lg font-bold">
               <Star size={18} className="text-amber-400" />

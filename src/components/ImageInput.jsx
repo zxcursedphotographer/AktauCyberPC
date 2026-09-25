@@ -28,12 +28,13 @@ export default function ImageInput({
   maxFiles = 6,
   max = 1600,
   className = "",
+  single = false,
 }) {
+  const limit = single ? 1 : maxFiles;
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef(null);
 
-  // Синхронизируем физический input прямо здесь (синхронно), без useEffect
   const syncInput = (newFiles) => {
     if (!fileInputRef.current) return;
     const dt = new DataTransfer();
@@ -51,7 +52,7 @@ export default function ImageInput({
       selected.map((file) => compressImage(file, max))
     );
 
-    const updated = [...files, ...compressed].slice(0, maxFiles);
+    const updated = [...files, ...compressed].slice(0, limit);
     setFiles(updated);
     syncInput(updated);
 
@@ -75,7 +76,7 @@ export default function ImageInput({
         ref={fileInputRef}
         onChange={handleSelect}
         accept="image/*"
-        multiple
+        multiple={!single}
         className="hidden"
       />
 
@@ -83,7 +84,9 @@ export default function ImageInput({
         {files.map((file, index) => (
           <div
             key={index}
-            className="relative w-14 h-14 rounded-lg overflow-hidden border border-slate-700 bg-slate-900 shrink-0"
+            className={`relative overflow-hidden rounded-lg border border-slate-700 bg-slate-900 shrink-0 ${
+              single ? "h-20 w-20" : "h-14 w-14"
+            }`}
           >
             <img
               src={URL.createObjectURL(file)}
@@ -103,7 +106,7 @@ export default function ImageInput({
           </div>
         ))}
 
-        {files.length < maxFiles && (
+        {files.length < limit && (
           <button
             type="button"
             disabled={loading}
@@ -111,7 +114,9 @@ export default function ImageInput({
               e.stopPropagation();
               fileInputRef.current?.click();
             }}
-            className="w-14 h-14 rounded-lg border-2 border-dashed border-slate-700 hover:border-cyan-500 bg-slate-900/50 hover:bg-slate-900 text-slate-400 hover:text-cyan-400 flex flex-col items-center justify-center transition-all shrink-0 cursor-pointer"
+            className={`rounded-lg border-2 border-dashed border-slate-700 hover:border-cyan-500 bg-slate-900/50 hover:bg-slate-900 text-slate-400 hover:text-cyan-400 flex flex-col items-center justify-center transition-all shrink-0 cursor-pointer ${
+              single ? "h-20 w-20" : "h-14 w-14"
+            }`}
           >
             {loading ? (
               <span className="text-[9px] text-cyan-400 animate-pulse">...</span>
@@ -126,7 +131,7 @@ export default function ImageInput({
       </div>
 
       <div className="text-[11px] text-slate-400">
-        Загружено: <span className="text-white font-medium">{files.length}</span> из {maxFiles}
+        Загружено: <span className="text-white font-medium">{files.length}</span> из {limit}
       </div>
     </div>
   );

@@ -143,6 +143,74 @@ const REASONS = {
   3: "Мошенничество или неадекватное поведение",
 };
 
+// ---------- Модерация объявлений ----------
+export async function approveListing(f) {
+  const me = await getUser(); if (me?.role !== "SUPER_ADMIN") throw new Error("Forbidden");
+  const id = f.get("id");
+  const l = await prisma.listing.findUnique({ where: { id } });
+  if (!l || l.status !== "UNDER_REVIEW") return;
+  await prisma.$transaction([
+    prisma.listing.update({ where: { id }, data: { status: "PUBLISHED", moderationNote: null } }),
+    prisma.adminLog.create({ data: { adminId: me.id, actionType: "APPROVE_LISTING", targetId: id, details: l.title } }),
+    prisma.message.create({ data: { senderId: me.id, receiverId: l.userId, listingId: id, text: `✅ Ваше объявление «${l.title}» одобрено и опубликовано.` } }),
+  ]);
+  revalidatePath("/admin"); revalidatePath("/admin/listings"); revalidatePath("/"); revalidatePath(`/listing/${id}`); revalidatePath(`/u/${l.userId}`);
+}
+
+export async function requestListingChanges(f) {
+  const me = await getUser(); if (me?.role !== "SUPER_ADMIN") throw new Error("Forbidden");
+  const id = f.get("id");
+  const note = String(f.get("note") || "").trim().slice(0, 500);
+  if (note.length < 5) throw new Error("Укажите причину");
+  const l = await prisma.listing.findUnique({ where: { id } });
+  if (!l || l.status !== "UNDER_REVIEW") return;
+  await prisma.$transaction([
+    prisma.listing.update({ where: { id }, data: { status: "NEEDS_EDIT", moderationNote: note } }),
+    prisma.adminLog.create({ data: { adminId: me.id, actionType: "REQUEST_EDIT", targetId: id, reason: note, details: l.title } }),
+    prisma.message.create({ data: { senderId: me.id, receiverId: l.userId, listingId: id, text: `✏️ Ваше объявление «${l.title}» требует изменений.\n\nПричина: ${note}` } }),
+  ]);
+  revalidatePath("/admin"); revalidatePath("/admin/listings"); revalidatePath(`/listing/${id}`); revalidatePath(`/u/${l.userId}`);
+}
+
+export async function rejectListing(f) {
+  const me = await getUser(); if (me?.role !== "SUPER_ADMIN") throw new Error("Forbidden");
+  const id = f.get("id");
+  const reason = REASONS[f.get("reason")] || "Без указания причины";
+  const l = await prisma.listing.findUnique({ where: { id } });
+  if (!l || l.status !== "UNDER_REVIEW") return;
+  await prisma.$transaction([
+    prisma.listing.update({ where: { id }, data: { status: "DELETED", deletedReason: reason, deletedAt: new Date(), moderationNote: null } }),
+    prisma.adminLog.create({ data: { adminId: me.id, actionType: "REJECT_LISTING", targetId: id, reason, details: l.title } }),
+    prisma.message.create({ data: { senderId: me.id, receiverId: l.userId, listingId: id, text: `❌ Ваше объявление «${l.title}» отклонено.\n\nПричина: ${reason}` } }),
+  ]);
+  revalidatePath("/admin"); revalidatePath("/admin/listings"); revalidatePath(`/u/${l.userId}`);
+}
+
+export async function setTestResult(f) {
+  const me = await getUser(); if (me?.role !== "SUPER_ADMIN") throw new Error("Forbidden");
+  const testId = f.get("testId");
+  const result = f.get("result") === "FAILED" ? "FAILED" : "PASSED";
+  const test = await prisma.componentTest.findUnique({ where: { id: testId }, include: { listing: true } });
+  if (!test) return;
+  await prisma.componentTest.update({ where: { id: testId }, data: { resultStatus: result } });
+  await prisma.adminLog.create({ data: { adminId: me.id, actionType: "SET_TEST_RESULT", targetId: testId, details: `${test.testTitle}: ${result}` } });
+  revalidatePath(`/listing/${test.listingId}`);
+  revalidatePath("/admin/listings");
+}
+
+export async function resubmitListing(f) {
+  const me = await getUser(); if (!me) return;
+  const id = f.get("id");
+  const l = await prisma.listing.findUnique({ where: { id } });
+  if (!l || l.userId !== me.id || l.status !== "NEEDS_EDIT") return;
+  const admin = await prisma.user.findFirst({ where: { role: "SUPER_ADMIN" } });
+  await prisma.$transaction([
+    prisma.listing.update({ where: { id }, data: { status: "UNDER_REVIEW", moderationNote: null } }),
+    ...(admin ? [prisma.message.create({ data: { senderId: me.id, receiverId: admin.id, listingId: id, text: `🔄 Объявление «${l.title}» исправлено и отправлено на повторную проверку.` } })] : []),
+  ]);
+  revalidatePath("/admin"); revalidatePath("/admin/listings"); revalidatePath(`/u/${me.username}`); revalidatePath(`/listing/${id}`);
+}
+
 export async function deleteListing(f) {
   const me = await getUser(); if (me?.role !== "SUPER_ADMIN") throw new Error("Forbidden");
   const id = f.get("id"), reason = REASONS[f.get("reason")]; if (!reason) throw new Error("Укажите причину");
@@ -151,10 +219,7 @@ export async function deleteListing(f) {
     prisma.adminLog.create({ data: { adminId: me.id, actionType: "DELETE_LISTING", targetId: id, reason, details: l.title } }),
     prisma.listing.update({ where: { id }, data: { status: "DELETED", deletedReason: reason, deletedAt: new Date() } }),
   ]);
-  revalidatePath("/admin");
-  revalidatePath("/admin/listings");
-  revalidatePath("/");
-  revalidatePath(`/u/${l.userId}`);
+  revalidatePath("/admin"); revalidatePath("/admin/listings"); revalidatePath("/"); revalidatePath(`/u/${l.userId}`);
   if (f.get("back")) redirect(f.get("back"));
 }
 
@@ -166,10 +231,7 @@ export async function restoreListing(f) {
     prisma.adminLog.create({ data: { adminId: me.id, actionType: "RESTORE_LISTING", targetId: id, details: l.title } }),
     prisma.listing.update({ where: { id }, data: { status: "PUBLISHED", deletedReason: null, deletedAt: null } }),
   ]);
-  revalidatePath("/admin");
-  revalidatePath("/admin/listings");
-  revalidatePath("/");
-  revalidatePath(`/u/${l.userId}`);
+  revalidatePath("/admin"); revalidatePath("/admin/listings"); revalidatePath("/"); revalidatePath(`/u/${l.userId}`);
 }
 
 // ---------- Апелляции ----------
@@ -186,12 +248,7 @@ export async function appealListing(f) {
   const title = String(f.get("title") || "").trim();
   const description = String(f.get("description") || "").trim();
   const price = Math.min(2000000000, Math.max(0, Math.round(+f.get("price") || 0)));
-  const data = {
-    status: "APPEAL",
-    appealMessage: message,
-    appealAt: new Date(),
-    previousReason: l.deletedReason,
-  };
+  const data = { status: "APPEAL", appealMessage: message, appealAt: new Date(), previousReason: l.deletedReason };
   if (title && title !== l.title) data.title = title.slice(0, 120);
   if (description && description !== l.description) data.description = description.slice(0, 5000);
   if (price && price !== l.price) data.price = price;
@@ -200,28 +257,17 @@ export async function appealListing(f) {
 
   await prisma.$transaction([
     prisma.listing.update({ where: { id }, data }),
-    ...(newPhotos.length > 0
-      ? [prisma.listingImage.createMany({ data: newPhotos.map((url, i) => ({ listingId: id, url, order: 100 + i })) })]
-      : []),
+    ...(newPhotos.length > 0 ? [prisma.listingImage.createMany({ data: newPhotos.map((url, i) => ({ listingId: id, url, order: 100 + i })) })] : []),
     prisma.adminLog.create({ data: { adminId: me.id, actionType: "APPEAL_SENT", targetId: id, details: message } }),
   ]);
 
   const admin = await prisma.user.findFirst({ where: { role: "SUPER_ADMIN" } });
   if (admin) {
     await prisma.message.create({
-      data: {
-        senderId: me.id,
-        receiverId: admin.id,
-        listingId: id,
-        text: `📩 Апелляция по объявлению «${l.title}»:\n\n${message}`,
-      },
+      data: { senderId: me.id, receiverId: admin.id, listingId: id, text: `📩 Апелляция по объявлению «${l.title}»:\n\n${message}` },
     });
   }
-
-  revalidatePath("/admin");
-  revalidatePath("/admin/listings");
-  revalidatePath(`/u/${me.username}`);
-  revalidatePath(`/listing/${id}`);
+  revalidatePath("/admin"); revalidatePath("/admin/listings"); revalidatePath(`/u/${me.username}`); revalidatePath(`/listing/${id}`);
   return { ok: true };
 }
 
@@ -230,28 +276,12 @@ export async function approveAppeal(f) {
   const id = f.get("id");
   const l = await prisma.listing.findUnique({ where: { id } });
   if (!l || l.status !== "APPEAL") return;
-
   await prisma.$transaction([
-    prisma.listing.update({
-      where: { id },
-      data: { status: "PUBLISHED", deletedReason: null, deletedAt: null, appealMessage: null, appealAt: null, previousReason: null },
-    }),
+    prisma.listing.update({ where: { id }, data: { status: "PUBLISHED", deletedReason: null, deletedAt: null, appealMessage: null, appealAt: null, previousReason: null } }),
     prisma.adminLog.create({ data: { adminId: me.id, actionType: "APPEAL_APPROVED", targetId: id, details: l.title } }),
-    prisma.message.create({
-      data: {
-        senderId: me.id,
-        receiverId: l.userId,
-        listingId: id,
-        text: `✅ Ваша апелляция по объявлению «${l.title}» одобрена. Объявление снова опубликовано.`,
-      },
-    }),
+    prisma.message.create({ data: { senderId: me.id, receiverId: l.userId, listingId: id, text: `✅ Ваша апелляция по объявлению «${l.title}» одобрена.` } }),
   ]);
-
-  revalidatePath("/admin");
-  revalidatePath("/admin/listings");
-  revalidatePath("/");
-  revalidatePath(`/listing/${id}`);
-  revalidatePath(`/u/${l.userId}`);
+  revalidatePath("/admin"); revalidatePath("/admin/listings"); revalidatePath("/"); revalidatePath(`/listing/${id}`); revalidatePath(`/u/${l.userId}`);
 }
 
 export async function rejectAppeal(f) {
@@ -260,26 +290,12 @@ export async function rejectAppeal(f) {
   const reason = REASONS[f.get("reason")] || "Апелляция отклонена без указания причины";
   const l = await prisma.listing.findUnique({ where: { id } });
   if (!l || l.status !== "APPEAL") return;
-
   await prisma.$transaction([
-    prisma.listing.update({
-      where: { id },
-      data: { status: "DELETED", deletedReason: reason, deletedAt: new Date(), appealMessage: null, appealAt: null },
-    }),
+    prisma.listing.update({ where: { id }, data: { status: "DELETED", deletedReason: reason, deletedAt: new Date(), appealMessage: null, appealAt: null } }),
     prisma.adminLog.create({ data: { adminId: me.id, actionType: "APPEAL_REJECTED", targetId: id, reason, details: l.title } }),
-    prisma.message.create({
-      data: {
-        senderId: me.id,
-        receiverId: l.userId,
-        listingId: id,
-        text: `❌ Ваша апелляция по объявлению «${l.title}» отклонена.\n\nПричина: ${reason}`,
-      },
-    }),
+    prisma.message.create({ data: { senderId: me.id, receiverId: l.userId, listingId: id, text: `❌ Ваша апелляция по объявлению «${l.title}» отклонена.\n\nПричина: ${reason}` } }),
   ]);
-
-  revalidatePath("/admin");
-  revalidatePath("/admin/listings");
-  revalidatePath(`/u/${l.userId}`);
+  revalidatePath("/admin"); revalidatePath("/admin/listings"); revalidatePath(`/u/${l.userId}`);
 }
 
 export async function setAccountStatus(f) {
@@ -289,8 +305,7 @@ export async function setAccountStatus(f) {
     prisma.user.update({ where: { id }, data: { status } }),
     prisma.adminLog.create({ data: { adminId: me.id, actionType: `ACCOUNT_${status}`, targetId: id } }),
   ]);
-  revalidatePath("/admin");
-  revalidatePath("/admin/users");
+  revalidatePath("/admin"); revalidatePath("/admin/users");
 }
 
 export async function resolveReport(f) {
@@ -302,8 +317,7 @@ export async function resolveReport(f) {
     ...(ok ? [prisma.user.update({ where: { id: r.targetUserId }, data: { status: "UNDER_REVIEW" } })] : []),
     prisma.adminLog.create({ data: { adminId: me.id, actionType: ok ? "REPORT_CONFIRMED" : "REPORT_REJECTED", targetId: r.id } }),
   ]);
-  revalidatePath("/admin");
-  revalidatePath("/admin/reports");
+  revalidatePath("/admin"); revalidatePath("/admin/reports");
 }
 
 // ---------- Профили, траст, отзывы ----------
@@ -325,8 +339,7 @@ export async function updateUsername(f) {
   const taken = await prisma.user.findUnique({ where: { username } });
   if (taken) return;
   await prisma.user.update({ where: { id: me.id }, data: { username } });
-  revalidatePath("/");
-  revalidatePath(`/u/${username}`);
+  revalidatePath("/"); revalidatePath(`/u/${username}`);
 }
 
 export async function removeMedia(f) {
@@ -341,8 +354,7 @@ export async function setTrust(f) {
   const score = Math.min(100, Math.max(1, Math.round(+f.get("score") || 1)));
   const u = await prisma.user.update({ where: { id: f.get("id") }, data: { trustScore: score } });
   await prisma.adminLog.create({ data: { adminId: me.id, actionType: "SET_TRUST", targetId: u.id, details: String(score) } });
-  revalidatePath(`/u/${u.username}`);
-  revalidatePath("/admin/users");
+  revalidatePath(`/u/${u.username}`); revalidatePath("/admin/users");
 }
 
 export async function addReview(f) {
@@ -358,28 +370,113 @@ export async function addReview(f) {
 }
 
 // ---------- Объявления ----------
-async function guardListing(id) {
+async function guardListingOwner(id) {
   const me = await getUser(), l = await prisma.listing.findUnique({ where: { id } });
   if (!me || !l || (l.userId !== me.id && me.role !== "SUPER_ADMIN")) throw new Error("Forbidden");
   return l;
 }
-export async function updateListing(f) {
-  const l = await guardListing(f.get("id"));
-  await prisma.listing.update({ where: { id: l.id }, data: { title: String(f.get("title")).slice(0, 120), description: String(f.get("description")).slice(0, 5000), price: Math.max(0, +f.get("price") || 0) } });
-  revalidatePath(`/listing/${l.id}`);
+
+function parseMetrics(s) {
+  if (!s) return {};
+  if (typeof s === "object") return s;
+  return Object.fromEntries(
+    String(s || "")
+      .split("\n")
+      .map((line) => line.split(/:(.*)/s))
+      .filter((p) => p[0]?.trim() && p[1]?.trim())
+      .map(([k, v]) => [k.trim(), isNaN(+v) ? v.trim() : +v])
+  );
 }
+
+export async function updateListing(f) {
+  const me = await getUser(); if (!me) return;
+  const id = f.get("id");
+  const l = await prisma.listing.findUnique({ where: { id } });
+  if (!l) return;
+  const isOwner = l.userId === me.id;
+  const isAdmin = me.role === "SUPER_ADMIN";
+  if (!isOwner && !isAdmin) throw new Error("Forbidden");
+
+  const shouldResetStatus = isOwner && !isAdmin && l.status === "PUBLISHED";
+
+  const data = {
+    title: String(f.get("title") || "").slice(0, 120),
+    description: String(f.get("description") || "").slice(0, 5000),
+    price: Math.min(2000000000, Math.max(0, Math.round(+f.get("price") || 0))),
+    category: String(f.get("category") || l.category),
+    city: String(f.get("city") || l.city),
+    district: String(f.get("district") || ""),
+  };
+  if (shouldResetStatus) data.status = "UNDER_REVIEW";
+
+  const testTitle = String(f.get("testTitle") || "").trim();
+  const testMetrics = parseMetrics(f.get("testMetrics"));
+
+  const CAT_TO_TYPE = {
+    "Видеокарты": "GPU", "Процессоры": "CPU", "Оперативная память": "RAM",
+    "Накопители (SSD/HDD)": "STORAGE", "Материнские платы": "MOTHERBOARD",
+  };
+  const componentType = CAT_TO_TYPE[data.category];
+
+  const rawTestImages = f.getAll("testImages") || [];
+  const newTestImages = (
+    await Promise.all(
+      rawTestImages.filter((file) => file && typeof file === "object" && file.size > 0).map(saveFile)
+    )
+  ).filter(Boolean);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.listing.update({ where: { id: l.id }, data });
+    if (componentType && testTitle) {
+      const existingTest = await tx.componentTest.findFirst({ where: { listingId: l.id, componentType } });
+      if (existingTest) {
+        await tx.componentTest.update({
+          where: { id: existingTest.id },
+          data: { testTitle, metrics: testMetrics, mediaUrls: newTestImages.length > 0 ? [...existingTest.mediaUrls, ...newTestImages] : existingTest.mediaUrls },
+        });
+      } else {
+        await tx.componentTest.create({
+          data: { listingId: l.id, componentType, testTitle, resultStatus: "PASSED", metrics: testMetrics, mediaUrls: newTestImages },
+        });
+      }
+    }
+  });
+
+  revalidatePath(`/listing/${l.id}`); revalidatePath("/admin/listings"); revalidatePath(`/u/${me.username}`); revalidatePath("/");
+}
+
+export async function removeTestImage(f) {
+  const me = await getUser(); if (!me) throw new Error("Unauthorized");
+  const testId = String(f.get("testId") || "");
+  const url = String(f.get("url") || "");
+  const test = await prisma.componentTest.findUnique({ where: { id: testId }, include: { listing: true } });
+  if (!test || (test.listing.userId !== me.id && me.role !== "SUPER_ADMIN")) throw new Error("Forbidden");
+  const updated = test.mediaUrls.filter((u) => u !== url);
+  await prisma.componentTest.update({ where: { id: testId }, data: { mediaUrls: updated } });
+  revalidatePath(`/listing/${test.listingId}`);
+}
+
+export async function deleteTest(f) {
+  const me = await getUser(); if (!me) throw new Error("Unauthorized");
+  const testId = String(f.get("testId") || "");
+  const test = await prisma.componentTest.findUnique({ where: { id: testId }, include: { listing: true } });
+  if (!test || (test.listing.userId !== me.id && me.role !== "SUPER_ADMIN")) throw new Error("Forbidden");
+  await prisma.componentTest.delete({ where: { id: testId } });
+  revalidatePath(`/listing/${test.listingId}`);
+}
+
 export async function addListingImage(f) {
-  const l = await guardListing(f.get("id")), url = await saveFile(f.get("photo"));
+  const l = await guardListingOwner(f.get("id")), url = await saveFile(f.get("photo"));
   if (url) await prisma.listingImage.create({ data: { listingId: l.id, url, order: 99 } });
   revalidatePath(`/listing/${l.id}`);
 }
 export async function removeListingImage(f) {
   const i = await prisma.listingImage.findUnique({ where: { id: f.get("id") } }); if (!i) return;
-  await guardListing(i.listingId);
+  await guardListingOwner(i.listingId);
   await prisma.listingImage.delete({ where: { id: i.id } });
   revalidatePath(`/listing/${i.listingId}`);
 }
-const parseMetrics = (s) => Object.fromEntries(String(s || "").split("\n").map((l) => l.split(/:(.*)/s)).filter((p) => p[0]?.trim() && p[1]?.trim()).map(([k, v]) => [k.trim(), isNaN(+v) ? v.trim() : +v]));
+
 export async function createListing(f) {
   const me = await getUser(); if (!me) redirect("/login");
   const title = String(f.get("title")).trim();
@@ -389,11 +486,12 @@ export async function createListing(f) {
   for (const t of ["GPU", "CPU", "RAM", "STORAGE", "MOTHERBOARD"]) {
     const tt = String(f.get(`t_${t}_title`) || "").trim(); if (!tt) continue;
     const mediaUrls = (await Promise.all(f.getAll(`t_${t}_shots`).map(saveFile))).filter(Boolean);
-    tests.push({ componentType: t, testTitle: tt, resultStatus: f.get(`t_${t}_result`) === "FAILED" ? "FAILED" : "PASSED", metrics: parseMetrics(f.get(`t_${t}_metrics`)), mediaUrls });
+    tests.push({ componentType: t, testTitle: tt, resultStatus: "PASSED", metrics: parseMetrics(f.get(`t_${t}_metrics`)), mediaUrls });
   }
   const l = await prisma.listing.create({ data: {
     title, description: String(f.get("description")), price: Math.min(2000000000, Math.max(0, Math.round(+f.get("price") || 0))), category: String(f.get("category")),
     city: String(f.get("city") || me.city || "Актау"), district: String(f.get("district") || me.district || ""), userId: me.id,
+    status: "UNDER_REVIEW",
     images: { create: photos.map((url, order) => ({ url, order })) }, tests: { create: tests } } });
   redirect(`/listing/${l.id}`);
 }
@@ -405,12 +503,10 @@ export async function sendToReview(f) {
   const me = await needSA(), id = f.get("id"); if (id === me.id) return;
   await prisma.$transaction([
     prisma.user.update({ where: { id }, data: { status: "UNDER_REVIEW" } }),
-    prisma.message.create({ data: { senderId: me.id, receiverId: id, text: "Ваш аккаунт отправлен на проверку. Ответьте здесь на вопросы администрации." } }),
+    prisma.message.create({ data: { senderId: me.id, receiverId: id, text: "Ваш аккаунт отправлен на проверку." } }),
     prisma.adminLog.create({ data: { adminId: me.id, actionType: "SEND_TO_REVIEW", targetId: id } }),
   ]);
-  revalidatePath("/admin");
-  revalidatePath("/admin/users");
-  revalidatePath("/review");
+  revalidatePath("/admin"); revalidatePath("/admin/users"); revalidatePath("/review");
 }
 
 export async function closeReview(f) {
@@ -419,9 +515,7 @@ export async function closeReview(f) {
     prisma.user.update({ where: { id }, data: { status: "ACTIVE" } }),
     prisma.adminLog.create({ data: { adminId: me.id, actionType: "CLOSE_REVIEW", targetId: id } }),
   ]);
-  revalidatePath("/admin");
-  revalidatePath("/admin/users");
-  revalidatePath("/review");
+  revalidatePath("/admin"); revalidatePath("/admin/users"); revalidatePath("/review");
 }
 
 export async function adjustTrust(f) {
@@ -432,26 +526,15 @@ export async function adjustTrust(f) {
   if (!u) return;
   const next = Math.min(100, Math.max(1, u.trustScore + d));
   await prisma.user.update({ where: { id: u.id }, data: { trustScore: next } });
-  await prisma.adminLog.create({
-    data: {
-      adminId: me.id,
-      actionType: d > 0 ? "PRAISE" : "WARN",
-      targetId: u.id,
-      details: `${d > 0 ? "+" : ""}${d} (${u.trustScore} → ${next})`,
-    },
-  });
-  revalidatePath("/admin");
-  revalidatePath("/admin/users");
-  revalidatePath(`/u/${u.username}`);
+  await prisma.adminLog.create({ data: { adminId: me.id, actionType: d > 0 ? "PRAISE" : "WARN", targetId: u.id, details: `${d > 0 ? "+" : ""}${d} (${u.trustScore} → ${next})` } });
+  revalidatePath("/admin"); revalidatePath("/admin/users"); revalidatePath(`/u/${u.username}`);
 }
 
 export async function resetTrust(f) {
   const me = await needSA(), id = f.get("id");
   const u = await prisma.user.update({ where: { id }, data: { trustScore: 50 } });
   await prisma.adminLog.create({ data: { adminId: me.id, actionType: "RESET_TRUST", targetId: u.id, details: "50" } });
-  revalidatePath("/admin");
-  revalidatePath("/admin/users");
-  revalidatePath(`/u/${u.username}`);
+  revalidatePath("/admin"); revalidatePath("/admin/users"); revalidatePath(`/u/${u.username}`);
 }
 
 export async function sendSupport(f) {
@@ -464,8 +547,7 @@ export async function sendSupport(f) {
   });
   if (blocked) return;
   await prisma.message.create({ data: { senderId: me.id, receiverId: to.id, text } });
-  revalidatePath("/review");
-  revalidatePath("/support");
+  revalidatePath("/review"); revalidatePath("/support");
 }
 
 // ---------- Почта, сброс пароля, продажа ----------
@@ -490,7 +572,7 @@ export async function requestReset(f) {
     const u = await prisma.user.findUnique({ where: { email } });
     if (u) {
       const t = await makeToken(u.id, "RESET", 1);
-      await sendMail(u.email, "Сброс пароля — AktauCyberPC", `<p><a href="${SITE()}/reset?token=${t}">Задать новый пароль</a></p><p>Ссылка действует 1 час. Если это были не вы, просто игнорируйте письмо.</p>`);
+      await sendMail(u.email, "Сброс пароля — AktauCyberPC", `<p><a href="${SITE()}/reset?token=${t}">Задать новый пароль</a></p>`);
     }
   }
   redirect("/forgot?sent=1");
@@ -507,7 +589,86 @@ export async function resetPassword(f) {
   redirect("/login");
 }
 export async function markSold(f) {
-  const l = await guardListing(f.get("id"));
+  const l = await guardListingOwner(f.get("id"));
   await prisma.listing.update({ where: { id: l.id }, data: { status: "SOLD", buyerId: f.get("buyerId") || null } });
   revalidatePath(`/listing/${l.id}`); revalidatePath("/");
+}
+
+// ---------- Массовые действия владельца ----------
+export async function hideListings(f) {
+  const me = await getUser(); if (!me) return;
+  const ids = f.getAll("ids").filter(Boolean);
+  if (!ids.length) return;
+  await prisma.listing.updateMany({
+    where: { id: { in: ids }, userId: me.id, status: { in: ["PUBLISHED", "DRAFT", "UNDER_REVIEW", "NEEDS_EDIT"] } },
+    data: { status: "HIDDEN" },
+  });
+  revalidatePath(`/u/${me.username}`); revalidatePath("/");
+}
+
+export async function unhideListing(f) {
+  const me = await getUser(); if (!me) return;
+  const id = f.get("id");
+  const l = await prisma.listing.findUnique({ where: { id } });
+  if (!l || l.userId !== me.id || l.status !== "HIDDEN") return;
+  await prisma.listing.update({ where: { id }, data: { status: "PUBLISHED" } });
+  revalidatePath(`/u/${me.username}`); revalidatePath("/");
+}
+
+export async function unhideManyListings(f) {
+  const me = await getUser(); if (!me) return;
+  const ids = f.getAll("ids").filter(Boolean);
+  if (!ids.length) return;
+  await prisma.listing.updateMany({
+    where: { id: { in: ids }, userId: me.id, status: "HIDDEN" },
+    data: { status: "PUBLISHED" },
+  });
+  revalidatePath(`/u/${me.username}`); revalidatePath("/");
+}
+
+export async function deleteOwnListings(f) {
+  const me = await getUser(); if (!me) return;
+  const ids = f.getAll("ids").filter(Boolean);
+  if (!ids.length) return;
+  const reason = "Удалено владельцем";
+  await prisma.listing.updateMany({
+    where: { id: { in: ids }, userId: me.id, status: { in: ["PUBLISHED", "DRAFT", "UNDER_REVIEW", "NEEDS_EDIT", "HIDDEN"] } },
+    data: { status: "DELETED", deletedReason: reason, deletedAt: new Date() },
+  });
+  revalidatePath(`/u/${me.username}`); revalidatePath("/");
+}
+
+// ---------- Гайды (видео) ----------
+const DEFAULT_GUIDES = [
+  { slug: "gpu", title: "Видеокарта", order: 1, videoUrl: "https://youtu.be/3MbZN8CyedM" },
+  { slug: "cpu", title: "Процессор", order: 2 },
+  { slug: "ram", title: "Оперативная память", order: 3 },
+  { slug: "storage", title: "SSD / HDD", order: 4 },
+  { slug: "psu", title: "Блок питания", order: 5 },
+  { slug: "case", title: "Корпус и охлаждение", order: 6 },
+];
+
+export async function seedGuidesIfEmpty() {
+  const count = await prisma.guideVideo.count();
+  if (count > 0) return;
+  await prisma.guideVideo.createMany({ data: DEFAULT_GUIDES });
+}
+
+export async function saveGuideVideo(f) {
+  const me = await getUser(); if (me?.role !== "SUPER_ADMIN") throw new Error("Forbidden");
+  const id = f.get("id");
+  const url = String(f.get("videoUrl") || "").trim();
+  if (!url) throw new Error("Пустая ссылка");
+  if (!/^https?:\/\//i.test(url)) throw new Error("Ссылка должна начинаться с http:// или https://");
+  await prisma.guideVideo.update({ where: { id }, data: { videoUrl: url } });
+  await prisma.adminLog.create({ data: { adminId: me.id, actionType: "SET_GUIDE_VIDEO", targetId: id, details: url } });
+  revalidatePath("/guide");
+}
+
+export async function clearGuideVideo(f) {
+  const me = await getUser(); if (me?.role !== "SUPER_ADMIN") throw new Error("Forbidden");
+  const id = f.get("id");
+  await prisma.guideVideo.update({ where: { id }, data: { videoUrl: null } });
+  await prisma.adminLog.create({ data: { adminId: me.id, actionType: "CLEAR_GUIDE_VIDEO", targetId: id } });
+  revalidatePath("/guide");
 }

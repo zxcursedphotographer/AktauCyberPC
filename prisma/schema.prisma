@@ -24,9 +24,11 @@ enum ListingStatus {
   DRAFT
   PUBLISHED
   UNDER_REVIEW
+  NEEDS_EDIT
   SOLD
   DELETED
   APPEAL
+  HIDDEN
 }
 
 enum ComponentType {
@@ -85,7 +87,7 @@ model Listing {
   description    String
   price          Int
   category       String
-  status         ListingStatus   @default(PUBLISHED)
+  status         ListingStatus   @default(UNDER_REVIEW)
   userId         String
   user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   city           String
@@ -97,6 +99,7 @@ model Listing {
   appealMessage  String?
   appealAt       DateTime?
   previousReason String?
+  moderationNote String?
   createdAt      DateTime        @default(now())
   images         ListingImage[]
   tests          ComponentTest[]
@@ -119,7 +122,7 @@ model ComponentTest {
   listing       Listing       @relation(fields: [listingId], references: [id], onDelete: Cascade)
   componentType ComponentType
   testTitle     String
-  resultStatus  TestResult
+  resultStatus  TestResult    @default(PASSED)
   metrics       Json
   mediaUrls     String[]
 }
@@ -202,4 +205,13 @@ model RateLog {
   createdAt DateTime @default(now())
 
   @@index([key, createdAt])
+}
+
+model GuideVideo {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  videoUrl  String?
+  order     Int      @default(0)
+  updatedAt DateTime @updatedAt
 }

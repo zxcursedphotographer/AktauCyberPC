@@ -1,20 +1,23 @@
+import { prisma } from "@/lib/prisma";
+import { getUser } from "@/lib/auth";
+import GuideEditor from "@/components/GuideEditor";
+import { seedGuidesIfEmpty } from "@/app/actions";
+
 export const metadata = {
   title: "Гайд на проверку компонентов — AktauCyberPC",
 };
 
-const components = [
-  {
-    name: "Видеокарта",
-    video: "https://youtu.be/3MbZN8CyedM",
-  },
-  { name: "Процессор" },
-  { name: "Оперативная память" },
-  { name: "SSD / HDD" },
-  { name: "Блок питания" },
-  { name: "Корпус и охлаждение" },
-];
+export default async function GuidePage() {
+  // Заполняем БД дефолтными гайдами при первом заходе
+  await seedGuidesIfEmpty();
 
-export default function GuidePage() {
+  const [me, guides] = await Promise.all([
+    getUser(),
+    prisma.guideVideo.findMany({ orderBy: { order: "asc" } }),
+  ]);
+
+  const isAdmin = me?.role === "SUPER_ADMIN";
+
   return (
     <div className="mx-auto max-w-2xl space-y-6 py-6">
       <div>
@@ -26,27 +29,29 @@ export default function GuidePage() {
       </div>
 
       <div className="space-y-3">
-        {components.map((c) => (
-          <div
-            key={c.name}
-            className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-4"
-          >
-            <span className="font-semibold">{c.name}</span>
-            {c.video ? (
-              <a
-                href={c.video}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn"
-              >
-                Смотреть видео
-              </a>
-            ) : (
-              <span className="text-sm text-slate-500">скоро</span>
-            )}
-          </div>
+        {guides.map((g) => (
+          <GuideEditor
+            key={g.id}
+            item={{
+              id: g.id,
+              slug: g.slug,
+              title: g.title,
+              videoUrl: g.videoUrl,
+            }}
+            isAdmin={isAdmin}
+          />
         ))}
       </div>
+
+      {isAdmin && (
+        <div className="rounded-xl border border-accent/30 bg-accent/5 p-4 text-sm">
+          <p className="font-semibold text-accent">🛡️ Режим администратора</p>
+          <p className="mt-1 opacity-80">
+            Вы можете редактировать ссылки на видео. Изменения сохраняются в базе
+            и сразу видны всем пользователям — перезагрузка страницы не нужна.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

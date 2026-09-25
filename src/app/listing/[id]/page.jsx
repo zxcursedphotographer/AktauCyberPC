@@ -3,13 +3,13 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getUser, mailOk } from "@/lib/auth";
 import AutoRefresh from "@/components/AutoRefresh";
-import { sendMessage } from "@/app/actions";
 import TestTabs from "@/components/TestTabs";
 import ListingTools from "@/components/ListingTools";
 import TrustBadge from "@/components/TrustBadge";
 import Avatar from "@/components/Avatar";
 import SellerReviews from "@/components/SellerReviews";
 import ListingGallery from "@/components/ListingGallery";
+import ChatForm from "@/components/ChatForm";
 
 const get = (id) =>
   prisma.listing.findUnique({
@@ -35,6 +35,11 @@ export async function generateMetadata({ params }) {
     },
     twitter: { card: "summary_large_image", title, description, images },
   };
+}
+
+function formatTime(date) {
+  const d = new Date(date);
+  return d.toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
 }
 
 export default async function ListingPage({ params }) {
@@ -118,7 +123,6 @@ export default async function ListingPage({ params }) {
 
       <div className="grid gap-8 lg:grid-cols-12 items-start">
         <div className="space-y-6 lg:col-span-7 xl:col-span-8">
-          {/* Галерея — отдельный клиентский компонент с лайтбоксом */}
           <ListingGallery
             images={l.images.map((i) => i.url)}
             title={l.title}
@@ -214,7 +218,7 @@ export default async function ListingPage({ params }) {
                 </div>
               ) : (
                 <>
-                  <div className="max-h-60 min-h-[100px] space-y-2 overflow-y-auto p-2 bg-slate-50 dark:bg-ink/50 rounded-lg text-xs">
+                  <div className="max-h-64 min-h-[100px] space-y-2 overflow-y-auto p-2 bg-slate-50 dark:bg-ink/50 rounded-lg text-xs">
                     {thread.length === 0 && (
                       <p className="text-slate-400 text-center py-6">
                         Спросите про состояние и место встречи.
@@ -223,7 +227,7 @@ export default async function ListingPage({ params }) {
                     {thread.map((m) => (
                       <div
                         key={m.id}
-                        className={`flex ${m.senderId === me.id ? "justify-end" : "justify-start"}`}
+                        className={`flex flex-col ${m.senderId === me.id ? "items-end" : "items-start"}`}
                       >
                         <p
                           className={`max-w-[85%] rounded-xl px-3 py-2 font-medium leading-normal ${
@@ -234,6 +238,10 @@ export default async function ListingPage({ params }) {
                         >
                           {m.text}
                         </p>
+                        <span className="mt-0.5 px-1 text-[10px] opacity-60">
+                          {formatTime(m.createdAt)}
+                          {m.senderId === me.id && (m.isRead ? " · ✓✓" : " · ✓")}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -244,18 +252,7 @@ export default async function ListingPage({ params }) {
                     </p>
                   )}
 
-                  <form action={sendMessage} className="flex gap-2 pt-1">
-                    <input type="hidden" name="listingId" value={l.id} />
-                    <input type="hidden" name="receiverId" value={l.userId} />
-                    <input
-                      name="text"
-                      required
-                      maxLength={2000}
-                      placeholder="Сообщение…"
-                      className="input text-xs py-2"
-                    />
-                    <button className="btn text-xs px-4 shrink-0">Отправить</button>
-                  </form>
+                  <ChatForm listingId={l.id} receiverId={l.userId} />
                 </>
               )}
             </div>
