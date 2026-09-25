@@ -1,40 +1,36 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
-import ImageInput from "@/components/ImageInput";
 import { getUser, mailOk } from "@/lib/auth";
 import { createListing } from "@/app/actions";
 import { CATS, TYPES } from "@/lib/constants";
+import NewListingFormClient from "@/components/NewListingFormClient";
 
 export const metadata = { title: "Создать объявление — AktauCyberPC" };
 
 export default async function NewListing() {
-  const me = await getUser(); if (!me) redirect("/login");
-  if (!mailOk(me)) return <p className="card">Сначала подтвердите почту: ссылка отправлена на {me.email}.</p>;
+  const me = await getUser();
+  if (!me) redirect("/login");
+
+  if (!mailOk(me)) {
+    return (
+      <div className="mx-auto max-w-xl my-12 p-6 rounded-2xl bg-slate-900 border border-slate-800 text-center shadow-xl">
+        <div className="text-amber-400 text-4xl mb-3">✉️</div>
+        <h2 className="text-xl font-bold text-slate-100 mb-2">Подтвердите вашу почту</h2>
+        <p className="text-slate-400 text-sm">
+          Ссылка для подтверждения аккаунта отправлена на <span className="text-cyan-400 font-medium">{me.email}</span>.
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <form action={createListing} className="mx-auto max-w-2xl space-y-4">
-      <h1 className="text-2xl font-bold">Новое объявление</h1>
-      <div className="card space-y-3">
-        <input name="title" required maxLength={120} placeholder="Заголовок: RTX 3070 Gigabyte Gaming OC" className="input" />
-        <select name="category" required className="input"><option value="">Категория</option>{CATS.map((c) => <option key={c}>{c}</option>)}</select>
-        <input name="price" type="number" required min={0} placeholder="Цена, ₸" className="input" />
-        <textarea name="description" required rows={5} maxLength={5000} placeholder="Состояние, гарантия, комплектация, причина продажи" className="input" />
-        <div className="flex gap-2"><input name="city" defaultValue={me.city || "Актау"} placeholder="Город" className="input" /><input name="district" defaultValue={me.district || ""} placeholder="Микрорайон (без улицы и дома)" className="input" /></div>
-        <label className="block text-sm">Фотографии товара<ImageInput name="photos" multiple className="input" /></label>
-      </div>
-      <h2 className="text-lg font-bold">Проверенные компоненты</h2>
-      <p className="text-sm opacity-70">Заполните только то, что вы проверили. Пустые блоки не публикуются.</p>
-      {TYPES.map(([k, name, hint]) => (
-        <details key={k} className="card"><summary className="cursor-pointer font-semibold">{name}</summary>
-          <div className="mt-3 space-y-2">
-            <input name={`t_${k}_title`} placeholder={`Название теста (${hint})`} className="input" />
-            <select name={`t_${k}_result`} className="input"><option value="PASSED">Тест пройден</option><option value="FAILED">Тест не пройден</option></select>
-            <textarea name={`t_${k}_metrics`} rows={4} className="input" placeholder={"Показатели, каждый с новой строки:\nТемпература GPU, °C: 71\nHot Spot, °C: 83\nМайнинг: не использовалась"} />
-            <label className="block text-sm">Скриншоты и фото тестов<ImageInput name={`t_${k}_shots`} multiple className="input" /></label>
-          </div></details>))}
-      <div className="flex gap-2">
-        <button className="btn flex-1 justify-center">Опубликовать</button>
-        <Link href="/" className="btn-secondary flex-1 justify-center text-center">Отмена</Link>
-      </div>
-    </form>
+    <main className="min-h-screen py-8 pb-28 px-4 sm:px-6 bg-slate-950 text-slate-100 flex justify-center">
+      <NewListingFormClient 
+        action={createListing} 
+        cats={CATS} 
+        types={TYPES} 
+        defaultCity={me.city || "Актау"} 
+        defaultDistrict={me.district || ""} 
+      />
+    </main>
   );
 }

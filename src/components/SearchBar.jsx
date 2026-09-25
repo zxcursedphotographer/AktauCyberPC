@@ -59,7 +59,6 @@ export default function SearchBar() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Состояние формы
   const [query, setQuery] = useState(searchParams.get("q") || "");
   const [category, setCategory] = useState(searchParams.get("category") || "ALL");
   const [city, setCity] = useState(searchParams.get("city") || "Актау");
@@ -67,7 +66,6 @@ export default function SearchBar() {
   const [priceTo, setPriceTo] = useState(searchParams.get("priceTo") || "");
   const [sort, setSort] = useState(searchParams.get("sort") || "newest");
 
-  // UI Состояния Dropdown
   const [isCityOpen, setIsCityOpen] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [citySearch, setCitySearch] = useState("");
@@ -75,7 +73,6 @@ export default function SearchBar() {
   const cityRef = useRef(null);
   const filterRef = useRef(null);
 
-  // Закрытие при клике вне дропдауна
   useEffect(() => {
     function handleClickOutside(event) {
       if (cityRef.current && !cityRef.current.contains(event.target)) {
@@ -115,7 +112,7 @@ export default function SearchBar() {
   };
 
   return (
-    <div className="w-full bg-panel border border-white/10 rounded-xl p-2.5 shadow-2xl relative z-30">
+    <div className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 shadow-2xl relative z-30">
       <form onSubmit={handleSearch} className="flex flex-wrap lg:flex-nowrap items-center gap-2">
         
         {/* 1. Категории */}
@@ -123,15 +120,15 @@ export default function SearchBar() {
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            className="w-full h-11 bg-ink/80 text-white text-sm rounded-lg px-3 pr-8 border border-white/10 focus:outline-none focus:border-accent appearance-none cursor-pointer"
+            className="w-full h-11 bg-slate-950 text-slate-100 text-sm rounded-lg px-3 pr-8 border border-slate-800 focus:outline-none focus:border-cyan-500 appearance-none cursor-pointer"
           >
             {CATEGORIES.map((cat) => (
-              <option key={cat.id} value={cat.id} className="bg-panel text-white">
+              <option key={cat.id} value={cat.id} className="bg-slate-900 text-slate-100">
                 {cat.name}
               </option>
             ))}
           </select>
-          <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
 
         {/* 2. Город (Dropdown) */}
@@ -139,25 +136,25 @@ export default function SearchBar() {
           <button
             type="button"
             onClick={() => setIsCityOpen(!isCityOpen)}
-            className="w-full h-11 bg-ink/80 text-white text-sm rounded-lg px-3 border border-white/10 flex items-center justify-between hover:border-accent transition"
+            className="w-full h-11 bg-slate-950 text-slate-100 text-sm rounded-lg px-3 border border-slate-800 flex items-center justify-between hover:border-cyan-500/50 transition"
           >
             <span className="flex items-center gap-1.5 truncate">
-              <MapPin className="w-4 h-4 text-accent shrink-0" />
+              <MapPin className="w-4 h-4 text-cyan-400 shrink-0" />
               <span className="truncate">{city}</span>
             </span>
-            <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
+            <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
           </button>
 
           {isCityOpen && (
-            <div className="absolute top-12 left-0 w-72 bg-panel border border-white/10 rounded-xl shadow-2xl p-3 z-50">
+            <div className="absolute top-12 left-0 w-72 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl p-3 z-50">
               <div className="relative mb-2">
-                <Search className="w-4 h-4 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   placeholder="Поиск города..."
                   value={citySearch}
                   onChange={(e) => setCitySearch(e.target.value)}
-                  className="w-full h-9 bg-ink text-xs rounded-lg pl-8 pr-3 border border-white/10 focus:outline-none focus:border-accent text-white"
+                  className="w-full h-9 bg-slate-950 text-xs rounded-lg pl-8 pr-3 border border-slate-800 focus:outline-none focus:border-cyan-500 text-slate-100 placeholder:text-slate-400"
                 />
               </div>
 
@@ -171,11 +168,13 @@ export default function SearchBar() {
                       setIsCityOpen(false);
                     }}
                     className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between transition ${
-                      city === cityName ? "bg-accent text-white font-medium" : "text-gray-300 hover:bg-white/5"
+                      city === cityName 
+                        ? "bg-cyan-400 text-slate-950 font-bold" 
+                        : "text-slate-300 hover:bg-slate-800"
                     }`}
                   >
                     <span>{cityName}</span>
-                    {city === cityName && <Check className="w-3.5 h-3.5" />}
+                    {city === cityName && <Check className="w-3.5 h-3.5 text-slate-950" />}
                   </button>
                 ))}
               </div>
@@ -185,13 +184,13 @@ export default function SearchBar() {
 
         {/* 3. Поисковый инпут */}
         <div className="relative flex-1 min-w-[200px] w-full">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Поиск по названию (например, RTX 3080)..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full h-11 bg-ink/80 text-white text-sm rounded-lg pl-9 pr-3 border border-white/10 focus:outline-none focus:border-accent placeholder:text-gray-500"
+            className="w-full h-11 bg-slate-950 text-slate-100 text-sm rounded-lg pl-9 pr-3 border border-slate-800 focus:outline-none focus:border-cyan-500 placeholder:text-slate-400"
           />
         </div>
 
@@ -202,8 +201,8 @@ export default function SearchBar() {
             onClick={() => setIsFilterOpen(!isFilterOpen)}
             className={`h-11 px-3.5 rounded-lg border text-sm flex items-center gap-2 transition ${
               priceFrom || priceTo || sort !== "newest"
-                ? "border-accent bg-accent/20 text-accent"
-                : "border-white/10 bg-ink/80 text-gray-300 hover:border-white/20"
+                ? "border-cyan-500 bg-cyan-500/10 text-cyan-400 font-semibold"
+                : "border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700"
             }`}
           >
             <SlidersHorizontal className="w-4 h-4" />
@@ -211,13 +210,13 @@ export default function SearchBar() {
           </button>
 
           {isFilterOpen && (
-            <div className="absolute right-0 top-12 w-80 bg-panel border border-white/10 rounded-xl shadow-2xl p-4 z-50 space-y-4">
-              <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <span className="text-sm font-semibold text-white">Фильтры и сортировка</span>
+            <div className="absolute right-0 top-12 w-80 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl p-4 z-50 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <span className="text-sm font-semibold text-slate-100">Фильтры и сортировка</span>
                 <button
                   type="button"
                   onClick={() => setIsFilterOpen(false)}
-                  className="text-gray-400 hover:text-white"
+                  className="text-slate-400 hover:text-slate-100"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -225,33 +224,33 @@ export default function SearchBar() {
 
               {/* Диапазон цен */}
               <div>
-                <label className="text-xs text-gray-400 block mb-1.5 font-medium">Цена (₸)</label>
+                <label className="text-xs text-slate-300 block mb-1.5 font-medium">Цена (₸)</label>
                 <div className="grid grid-cols-2 gap-2">
                   <input
                     type="number"
                     placeholder="От"
                     value={priceFrom}
                     onChange={(e) => setPriceFrom(e.target.value)}
-                    className="h-9 bg-ink text-xs rounded-lg px-2.5 border border-white/10 text-white focus:outline-none focus:border-accent"
+                    className="h-9 bg-slate-950 text-xs rounded-lg px-2.5 border border-slate-800 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-cyan-500"
                   />
                   <input
                     type="number"
                     placeholder="До"
                     value={priceTo}
                     onChange={(e) => setPriceTo(e.target.value)}
-                    className="h-9 bg-ink text-xs rounded-lg px-2.5 border border-white/10 text-white focus:outline-none focus:border-accent"
+                    className="h-9 bg-slate-950 text-xs rounded-lg px-2.5 border border-slate-800 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-cyan-500"
                   />
                 </div>
               </div>
 
               {/* Сортировка */}
               <div>
-                <label className="text-xs text-gray-400 block mb-1.5 font-medium">Сортировка</label>
+                <label className="text-xs text-slate-300 block mb-1.5 font-medium">Сортировка</label>
                 <div className="space-y-1">
                   {SORT_OPTIONS.map((opt) => (
                     <label
                       key={opt.id}
-                      className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white/5 cursor-pointer text-xs text-gray-300"
+                      className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-800 cursor-pointer text-xs text-slate-300"
                     >
                       <input
                         type="radio"
@@ -259,7 +258,7 @@ export default function SearchBar() {
                         value={opt.id}
                         checked={sort === opt.id}
                         onChange={(e) => setSort(e.target.value)}
-                        className="accent-accent"
+                        className="accent-cyan-400"
                       />
                       <span>{opt.name}</span>
                     </label>
@@ -267,18 +266,18 @@ export default function SearchBar() {
                 </div>
               </div>
 
-              <div className="flex gap-2 pt-2 border-t border-white/10">
+              <div className="flex gap-2 pt-2 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={handleResetFilters}
-                  className="flex-1 h-9 rounded-lg border border-white/10 text-xs text-gray-400 hover:text-white transition"
+                  className="flex-1 h-9 rounded-lg border border-slate-800 text-xs text-slate-400 hover:text-slate-100 transition"
                 >
                   Сбросить
                 </button>
                 <button
                   type="button"
                   onClick={handleSearch}
-                  className="flex-1 h-9 rounded-lg bg-accent text-white font-medium text-xs hover:opacity-90 transition"
+                  className="flex-1 h-9 rounded-lg bg-cyan-400 text-slate-950 font-bold text-xs hover:bg-cyan-300 transition"
                 >
                   Применить
                 </button>
@@ -290,7 +289,7 @@ export default function SearchBar() {
         {/* 5. Кнопка «Найти» */}
         <button
           type="submit"
-          className="h-11 px-5 bg-accent text-white text-sm font-medium rounded-lg hover:opacity-90 transition flex items-center justify-center"
+          className="h-11 px-5 bg-cyan-400 text-slate-950 text-sm font-bold rounded-lg hover:bg-cyan-300 transition flex items-center justify-center shadow-lg shadow-cyan-500/10"
         >
           Найти
         </button>
@@ -298,7 +297,7 @@ export default function SearchBar() {
         {/* 6. Кнопка «+ Создать объявление» */}
         <Link
           href="/new"
-          className="h-11 px-4 bg-hot text-white text-sm font-semibold rounded-lg hover:opacity-90 transition flex items-center gap-1.5 whitespace-nowrap ml-auto"
+          className="h-11 px-4 bg-rose-500 text-white text-sm font-semibold rounded-lg hover:bg-rose-400 transition flex items-center gap-1.5 whitespace-nowrap ml-auto shadow-lg shadow-rose-500/10"
         >
           <Plus className="w-4 h-4" />
           <span>Создать объявление</span>

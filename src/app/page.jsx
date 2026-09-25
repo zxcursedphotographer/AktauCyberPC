@@ -69,50 +69,77 @@ export default async function Home({ searchParams: p }) {
 
   return (
     <main className="min-h-screen p-4 lg:p-8 max-w-7xl mx-auto space-y-6">
-      {/* Новая скомпонованная панель поиска */}
+      {/* Панель поиска */}
       <SearchBar />
 
       {/* Сообщение об отсутствии результатов */}
       {items.length === 0 && (
-        <div className="card p-8 text-center text-gray-400">
+        <div className="card p-8 text-center text-slate-500 dark:text-slate-400">
           Ничего не найдено. Уберите часть фильтров или измените критерии поиска.
         </div>
       )}
 
       {/* Сетка объявлений */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {items.map((l) => (
           <Link
             key={l.id}
             href={`/listing/${l.id}`}
-            className="card overflow-hidden !p-0 hover:border-accent transition duration-200"
+            className="card overflow-hidden !p-3 hover:border-accent/50 hover:shadow-lg transition duration-200 group flex flex-col justify-between"
           >
-            {l.images[0] && (
-              <img
-                src={l.images[0].url}
-                alt={l.title}
-                className="h-44 w-full object-cover"
-              />
-            )}
-            <div className="p-3">
-              <h3 className="font-semibold text-white">{l.title}</h3>
-              <p className="text-lg font-bold text-accent">
-                {l.price.toLocaleString("ru")} ₸
-              </p>
-              <p className="text-sm opacity-70">
-                {l.city}{l.district ? `, ${l.district}` : ""}
-              </p>
-              <p className="mt-2 flex items-center gap-2 text-sm text-gray-200">
-                <Avatar user={l.user} size={24} />
-                <span>{l.user.username}</span>
-                <TrustBadge score={l.user.trustScore} size={22} />
-              </p>
-              {l.tests && l.tests.length > 0 && (
-                <p className="mt-1 text-xs text-emerald-500">
-                  Тестов пройдено:{" "}
-                  {l.tests.filter((t) => t.resultStatus === "PASSED").length}/
-                  {l.tests.length}
+            <div className="space-y-3">
+              {/* Контейнер фото с аккуратной рамкой */}
+              <div className="relative aspect-[4/3] w-full overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800/80">
+                {l.images[0] ? (
+                  <>
+                    <img
+                      src={l.images[0].url}
+                      alt=""
+                      className="absolute inset-0 h-full w-full object-cover blur-md opacity-30 scale-110"
+                    />
+                    <img
+                      src={l.images[0].url}
+                      alt={l.title}
+                      className="relative h-full w-full object-contain group-hover:scale-105 transition duration-300 ease-out"
+                    />
+                  </>
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center text-slate-400 text-xs font-medium">
+                    Нет фотографии
+                  </div>
+                )}
+              </div>
+
+              {/* Текстовая информация */}
+              <div className="space-y-1">
+                <p className="text-lg font-black text-accent">
+                  {l.price.toLocaleString("ru")} ₸
                 </p>
+
+                <h3 className="font-semibold text-slate-900 dark:text-slate-100 line-clamp-2 leading-snug text-sm">
+                  {l.title}
+                </h3>
+
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                  {l.city}{l.district ? `, ${l.district}` : ""}
+                </p>
+              </div>
+            </div>
+
+            {/* Подвал карточки: Продавец и тесты */}
+            <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-white/5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Avatar user={l.user} size={22} />
+                <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate">
+                  {l.user.username}
+                </span>
+                <TrustBadge score={l.user.trustScore} size={18} />
+              </div>
+
+              {l.tests && l.tests.length > 0 && (
+                <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-full shrink-0">
+                  {l.tests.filter((t) => t.resultStatus === "PASSED").length}/{l.tests.length}
+                </span>
               )}
             </div>
           </Link>

@@ -5,7 +5,6 @@ import { Cpu, MessageSquare, Shield, LifeBuoy, Store, BookOpen } from "lucide-re
 import { getUser, isStaff, mailOk } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logout, resendVerify } from "./actions";
-import ThemeToggle from "@/components/ThemeToggle";
 import Avatar from "@/components/Avatar";
 import UserMenu from "@/components/UserMenu";
 
@@ -55,13 +54,6 @@ export default async function RootLayout({ children }) {
       className={`dark ${iosevka.variable} ${metalMania.variable}`}
       suppressHydrationWarning
     >
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `try{if(localStorage.theme==="light")document.documentElement.classList.remove("dark")}catch(e){}`,
-          }}
-        />
-      </head>
       <body className="min-h-screen font-sans">
         <header className="sticky top-0 z-40 px-3 pt-3">
           <nav className="mx-auto flex max-w-7xl items-center gap-2 rounded-2xl border border-slate-200/70 bg-white/70 px-3 py-2 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-panel/60 dark:shadow-black/20">
@@ -113,8 +105,6 @@ export default async function RootLayout({ children }) {
                 )}
               </Link>
             )}
-
-            <ThemeToggle />
 
             {me ? (
               <UserMenu username={me.username} avatarUrl={me.avatarUrl} logoutAction={logout} />
