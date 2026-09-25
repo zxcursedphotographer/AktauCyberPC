@@ -1,7 +1,7 @@
 import "./globals.css";
 import localFont from "next/font/local";
 import Link from "next/link";
-import { Cpu, MessageSquare, Shield, LifeBuoy, Store, BookOpen } from "lucide-react";
+import { MessageSquare, Shield, LifeBuoy, Store, BookOpen } from "lucide-react";
 import { getUser, isStaff, mailOk } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logout, resendVerify } from "./actions";
@@ -56,22 +56,9 @@ export default async function RootLayout({ children }) {
     >
       <body className="min-h-screen font-sans">
         <header className="sticky top-0 z-40 px-3 pt-3">
-          <nav className="mx-auto flex max-w-7xl items-center gap-2 rounded-2xl border border-slate-200/70 bg-white/70 px-3 py-2 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-panel/60 dark:shadow-black/20">
+          <nav className="mx-auto grid max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-2 rounded-2xl border border-slate-200/70 bg-white/70 px-4 py-2.5 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-panel/60 dark:shadow-black/20">
 
-            <Link
-              href="/"
-              className="group flex items-center gap-2 rounded-xl px-2 py-1 transition hover:bg-slate-900/5 dark:hover:bg-white/10"
-            >
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-hot shadow-lg shadow-accent/30 transition group-hover:scale-105">
-                <Cpu size={18} className="text-white" />
-              </span>
-              <span className="font-metal bg-gradient-to-r from-accent to-hot bg-clip-text text-lg text-transparent">
-                AktauCyberPC
-              </span>
-            </Link>
-
-            <span className="flex-1" />
-
+            {/* ЛЕВАЯ ГРУППА — навигация */}
             <div className="hidden items-center gap-1 md:flex">
               <Link href="/sellers" className={navLink}>
                 <Store size={16} /> Продавцы
@@ -82,40 +69,60 @@ export default async function RootLayout({ children }) {
               <Link href="/support" className={navLink}>
                 <LifeBuoy size={16} /> Поддержка
               </Link>
+            </div>
+            <div className="md:hidden" />
+
+            {/* ЦЕНТР — Логотип с картинкой */}
+            <Link
+              href="/"
+              className="group flex items-center justify-center gap-2.5 rounded-xl px-3 py-1 transition hover:bg-slate-900/5 dark:hover:bg-white/10"
+            >
+              <img
+                src="/logo.png"
+                alt="AktauCyberPC"
+                width={44}
+                height={44}
+                className="h-11 w-11 shrink-0 rounded-xl object-contain transition group-hover:scale-105"
+              />
+              <span className="font-metal bg-gradient-to-r from-accent to-hot bg-clip-text text-3xl leading-none tracking-wide text-transparent">
+                AktauCyberPC
+              </span>
+            </Link>
+
+            {/* ПРАВАЯ ГРУППА — админка, сообщения, профиль */}
+            <div className="flex items-center justify-end gap-1">
               {(me?.role === "SUPER_ADMIN" || me?.status === "UNDER_REVIEW") && (
-                <Link href="/review" className={navLink}>Проверка</Link>
+                <Link href="/review" className={`${navLink} hidden md:flex`}>Проверка</Link>
               )}
               {isStaff(me) && (
-                <Link href="/admin" className={navLink}>
+                <Link href="/admin" className={`${navLink} hidden md:flex`}>
                   <Shield size={16} /> Админка
                 </Link>
               )}
+
+              {me && (
+                <Link href="/chat" className={`${navLink} relative`} title="Сообщения">
+                  <MessageSquare size={16} />
+                  <span className="hidden sm:inline">Сообщения</span>
+                  {unread > 0 && (
+                    <b className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-hot px-1 text-[10px] font-bold text-white">
+                      {unread}
+                    </b>
+                  )}
+                </Link>
+              )}
+
+              {me ? (
+                <UserMenu username={me.username} avatarUrl={me.avatarUrl} logoutAction={logout} />
+              ) : (
+                <Link
+                  href="/login"
+                  className="rounded-full bg-accent px-4 py-1.5 text-sm font-semibold text-white shadow-lg shadow-accent/30 transition hover:brightness-110"
+                >
+                  Войти
+                </Link>
+              )}
             </div>
-
-            <span className="mx-1 hidden h-6 w-px bg-slate-300/60 dark:bg-white/15 md:block" />
-
-            {me && (
-              <Link href="/chat" className={`${navLink} relative`} title="Сообщения">
-                <MessageSquare size={16} />
-                <span className="hidden sm:inline">Сообщения</span>
-                {unread > 0 && (
-                  <b className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-hot px-1 text-[10px] font-bold text-white">
-                    {unread}
-                  </b>
-                )}
-              </Link>
-            )}
-
-            {me ? (
-              <UserMenu username={me.username} avatarUrl={me.avatarUrl} logoutAction={logout} />
-            ) : (
-              <Link
-                href="/login"
-                className="rounded-full bg-accent px-4 py-1.5 text-sm font-semibold text-white shadow-lg shadow-accent/30 transition hover:brightness-110"
-              >
-                Войти
-              </Link>
-            )}
           </nav>
         </header>
 
