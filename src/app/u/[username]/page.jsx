@@ -10,8 +10,8 @@ import AppealModal from "@/components/AppealModal";
 import ListingSelector from "@/components/ListingSelector";
 import ListingCard from "@/components/ListingCard";
 import {
-  Package, ShoppingBag, Trash2, Star, MapPin, Calendar, Settings, Shield,
-  Clock, EyeOff, AlertTriangle, CheckCircle2, Send,
+  Package, ShoppingBag, Trash2, Star, MapPin, Calendar, Settings,
+  Shield, Clock, EyeOff, AlertTriangle, Send,
 } from "lucide-react";
 
 const STATUS_INFO = {
@@ -22,7 +22,7 @@ const STATUS_INFO = {
 
 function EmptyState({ icon: Icon, title, subtitle, action }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300/60 bg-slate-50/50 px-6 py-12 text-center dark:border-white/10 dark:bg-white/[0.02]">
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-6 py-12 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/10 text-accent">
         <Icon size={26} />
       </div>
@@ -36,23 +36,60 @@ function EmptyState({ icon: Icon, title, subtitle, action }) {
 export default async function Profile({ params, searchParams }) {
   const u = await prisma.user.findUnique({
     where: { username: decodeURIComponent(params.username) },
-    include: {
-      listings: { include: { images: { take: 1 } }, orderBy: { createdAt: "desc" } },
-      reviewsGot: { include: { author: true }, orderBy: [{ pinned: "desc" }, { createdAt: "desc" }] },
+    select: {
+      id: true,
+      username: true,
+      avatarUrl: true,
+      bannerUrl: true,
+      bio: true,
+      city: true,
+      district: true,
+      rating: true,
+      trustScore: true,
+      status: true,
+      role: true,
+      createdAt: true,
+      _count: { select: { listings: true, reviewsGot: true } },
     },
   });
   if (!u) notFound();
+
   const me = await getUser();
-  const sa = me?.role === "SUPER_ADMIN", own = me?.id === u.id, edit = own || sa;
-  const canReview = me && !own && (sa || (await prisma.listing.count({ where: { userId: u.id, buyerId: me.id, status: "SOLD" } })) > 0);
+  const sa = me?.role === "SUPER_ADMIN";
+  const own = me?.id === u.id;
+  const edit = own || sa;
+
+  const [listings, reviews, canReview] = await Promise.all([
+    prisma.listing.findMany({
+      where: { userId: u.id },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+      include: {
+        images: { take: 1, orderBy: { order: "asc" } },
+      },
+    }),
+    prisma.review.findMany({
+      where: { targetId: u.id },
+      orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
+      take: 50,
+      include: { author: { select: { username: true, avatarUrl: true } } },
+    }),
+    me && !own
+      ? prisma.listing
+          .count({ where: { userId: u.id, buyerId: me.id, status: "SOLD" } })
+          .then((n) => sa || n > 0)
+      : Promise.resolve(false),
+  ]);
 
   // Разбивка по статусам
-  const activeListings = u.listings.filter((l) => l.status === "PUBLISHED" || l.status === "DRAFT");
-  const underReviewListings = u.listings.filter((l) => l.status === "UNDER_REVIEW");
-  const needsEditListings = u.listings.filter((l) => l.status === "NEEDS_EDIT");
-  const soldListings = u.listings.filter((l) => l.status === "SOLD");
-  const deletedListings = u.listings.filter((l) => l.status === "DELETED" || l.status === "APPEAL");
-  const hiddenListings = u.listings.filter((l) => l.status === "HIDDEN");
+  const byStatus = {
+    active: listings.filter((l) => l.status === "PUBLISHED" || l.status === "DRAFT"),
+    review: listings.filter((l) => l.status === "UNDER_REVIEW"),
+    needs_edit: listings.filter((l) => l.status === "NEEDS_EDIT"),
+    sold: listings.filter((l) => l.status === "SOLD"),
+    deleted: listings.filter((l) => l.status === "DELETED" || l.status === "APPEAL"),
+    hidden: listings.filter((l) => l.status === "HIDDEN"),
+  };
 
   const tabParam = searchParams.tab;
   const tab =
@@ -63,26 +100,21 @@ export default async function Profile({ params, searchParams }) {
     : tabParam === "hidden" ? "hidden"
     : "active";
 
-  const shown =
-    tab === "review" ? underReviewListings
-    : tab === "needs_edit" ? needsEditListings
-    : tab === "sold" ? soldListings
-    : tab === "deleted" ? deletedListings
-    : tab === "hidden" ? hiddenListings
-    : activeListings;
-
+  const shown = byStatus[tab] || byStatus.active;
   const status = STATUS_INFO[u.status] || STATUS_INFO.ACTIVE;
 
   const tabs = [
-    { key: "active", label: "Активные", count: activeListings.length, icon: Package, href: `/u/${u.username}` },
+    { key: "active", label: "Активные", count: byStatus.active.length, icon: Package, href: `/u/${u.username}` },
     ...(edit ? [
-      { key: "review", label: "На модерации", count: underReviewListings.length, icon: Clock, href: `/u/${u.username}?tab=review` },
-      ...(needsEditListings.length > 0 ? [{ key: "needs_edit", label: "Требует правок", count: needsEditListings.length, icon: AlertTriangle, href: `/u/${u.username}?tab=needs_edit` }] : []),
+      { key: "review", label: "На модерации", count: byStatus.review.length, icon: Clock, href: `/u/${u.username}?tab=review` },
+      ...(byStatus.needs_edit.length > 0
+        ? [{ key: "needs_edit", label: "Требует правок", count: byStatus.needs_edit.length, icon: AlertTriangle, href: `/u/${u.username}?tab=needs_edit` }]
+        : []),
     ] : []),
-    { key: "sold", label: "Проданные", count: soldListings.length, icon: ShoppingBag, href: `/u/${u.username}?tab=sold` },
+    { key: "sold", label: "Проданные", count: byStatus.sold.length, icon: ShoppingBag, href: `/u/${u.username}?tab=sold` },
     ...(edit ? [
-      { key: "hidden", label: "Скрытые", count: hiddenListings.length, icon: EyeOff, href: `/u/${u.username}?tab=hidden` },
-      { key: "deleted", label: "Удалённые", count: deletedListings.length, icon: Trash2, href: `/u/${u.username}?tab=deleted` },
+      { key: "hidden", label: "Скрытые", count: byStatus.hidden.length, icon: EyeOff, href: `/u/${u.username}?tab=hidden` },
+      { key: "deleted", label: "Удалённые", count: byStatus.deleted.length, icon: Trash2, href: `/u/${u.username}?tab=deleted` },
     ] : []),
   ];
 
@@ -97,7 +129,7 @@ export default async function Profile({ params, searchParams }) {
       <div className="grid gap-6 px-4 md:grid-cols-[320px_1fr] md:px-0">
         <aside className="md:-mt-16">
           <div className="flex flex-col items-center text-center md:items-start md:text-left">
-            <div className="relative z-10 shrink-0 rounded-full border-4 border-slate-100 bg-slate-100 shadow-lg dark:border-[#0d0f17] dark:bg-[#0d0f17]">
+            <div className="relative z-10 shrink-0 rounded-full border-4 border-slate-950 bg-slate-950 shadow-lg">
               <Avatar user={u} size={112} />
             </div>
 
@@ -132,7 +164,7 @@ export default async function Profile({ params, searchParams }) {
             {edit && (
               <a
                 href="#edit"
-                className="mt-4 inline-flex items-center gap-2 rounded-full border border-slate-300/60 px-4 py-2 text-sm font-semibold transition hover:border-accent hover:bg-accent/10 hover:text-accent dark:border-white/15"
+                className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-sm font-semibold transition hover:border-accent hover:bg-accent/10 hover:text-accent"
               >
                 <Settings size={14} />
                 Настройки профиля
@@ -188,7 +220,7 @@ export default async function Profile({ params, searchParams }) {
                 <ImageInput name="banner" className="input" single />
 
                 <label className="block text-xs font-semibold uppercase tracking-wider opacity-60">О себе</label>
-                <textarea name="bio" defaultValue={u.bio || ""} rows={3} maxLength={500} placeholder="О себе" className="input" />
+                <textarea name="bio" defaultValue={u.bio || ""} rows={3} maxLength={500} placeholder="О себе" className="input resize-none" />
 
                 <div className="grid gap-2 sm:grid-cols-2">
                   <input name="city" defaultValue={u.city || ""} placeholder="Город" className="input" />
@@ -208,33 +240,33 @@ export default async function Profile({ params, searchParams }) {
         </aside>
 
         <main className="min-w-0 space-y-6">
-          <div>
-            <div className="flex gap-1 overflow-x-auto border-b border-slate-200/70 dark:border-white/10">
-              {tabs.map((t) => {
-                const active = tab === t.key;
-                const Icon = t.icon;
-                return (
-                  <Link
-                    key={t.key}
-                    href={t.href}
-                    className={`relative flex shrink-0 items-center gap-2 px-4 py-2.5 text-sm font-medium transition ${
-                      active ? "text-accent" : "opacity-60 hover:opacity-100"
-                    }`}
-                  >
-                    <Icon size={15} />
-                    {t.label}
-                    <span className={`rounded-full px-1.5 text-xs ${active ? "bg-accent/15 text-accent" : "bg-slate-500/15"}`}>
-                      {t.count}
-                    </span>
-                    {active && (
-                      <span className={`absolute inset-x-0 -bottom-px h-0.5 rounded-full ${
+          <div className="flex gap-1 overflow-x-auto border-b border-white/10">
+            {tabs.map((t) => {
+              const active = tab === t.key;
+              const Icon = t.icon;
+              return (
+                <Link
+                  key={t.key}
+                  href={t.href}
+                  className={`relative flex shrink-0 items-center gap-2 px-4 py-2.5 text-sm font-medium transition ${
+                    active ? "text-accent" : "opacity-60 hover:opacity-100"
+                  }`}
+                >
+                  <Icon size={15} />
+                  {t.label}
+                  <span className={`rounded-full px-1.5 text-xs ${active ? "bg-accent/15 text-accent" : "bg-white/10"}`}>
+                    {t.count}
+                  </span>
+                  {active && (
+                    <span
+                      className={`absolute inset-x-0 -bottom-px h-0.5 rounded-full ${
                         t.key === "deleted" ? "bg-hot" : t.key === "needs_edit" ? "bg-orange-500" : "bg-accent"
-                      }`} />
-                    )}
-                  </Link>
-                );
-              })}
-            </div>
+                      }`}
+                    />
+                  )}
+                </Link>
+              );
+            })}
           </div>
 
           {shown.length === 0 ? (
@@ -256,15 +288,16 @@ export default async function Profile({ params, searchParams }) {
                 : "Активных объявлений нет"
               }
               subtitle={
-                tab === "active" && own ? "Разместите первое объявление — покупатели увидят вас в поиске."
-                : tab === "review" ? "Как только админ одобрит — объявления появятся в активных."
-                : tab === "hidden" ? "Скрытые объявления не видны другим — вы можете вернуть их в любой момент."
-                : undefined
+                tab === "active" && own
+                  ? "Разместите первое объявление — покупатели увидят вас в поиске."
+                  : tab === "review"
+                    ? "Как только админ одобрит — объявления появятся в активных."
+                    : tab === "hidden"
+                      ? "Скрытые объявления не видны другим — вы можете вернуть их в любой момент."
+                      : undefined
               }
               action={
-                tab === "active" && own ? (
-                  <Link href="/new" className="btn">+ Создать объявление</Link>
-                ) : null
+                tab === "active" && own ? <Link href="/new" className="btn">+ Создать объявление</Link> : null
               }
             />
           ) : (
@@ -284,17 +317,17 @@ export default async function Profile({ params, searchParams }) {
                   return (
                     <ListingCard key={l.id} listing={{ id: l.id }}>
                       {l.status === "SOLD" && (
-                        <span className="absolute left-2 top-2 z-10 rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white shadow-lg shadow-emerald-600/40">
+                        <span className="absolute left-2 top-2 z-10 rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white shadow-lg">
                           ПРОДАНО
                         </span>
                       )}
                       {isDeleted && (
-                        <span className="absolute left-2 top-2 z-10 rounded-full bg-hot px-2 py-0.5 text-xs font-bold text-white shadow-lg shadow-hot/40">
+                        <span className="absolute left-2 top-2 z-10 rounded-full bg-hot px-2 py-0.5 text-xs font-bold text-white shadow-lg">
                           УДАЛЕНО
                         </span>
                       )}
                       {isAppeal && (
-                        <span className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white shadow-lg shadow-amber-500/40">
+                        <span className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white shadow-lg">
                           <Clock size={10} /> НА АПЕЛЛЯЦИИ
                         </span>
                       )}
@@ -304,17 +337,17 @@ export default async function Profile({ params, searchParams }) {
                         </span>
                       )}
                       {isReview && (
-                        <span className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white shadow-lg shadow-amber-500/40">
+                        <span className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white shadow-lg">
                           <Clock size={10} /> НА МОДЕРАЦИИ
                         </span>
                       )}
                       {isNeedsEdit && (
-                        <span className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-full bg-orange-500 px-2 py-0.5 text-xs font-bold text-white shadow-lg shadow-orange-500/40">
+                        <span className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-full bg-orange-500 px-2 py-0.5 text-xs font-bold text-white shadow-lg">
                           <AlertTriangle size={10} /> ТРЕБУЕТ ПРАВОК
                         </span>
                       )}
 
-                      {(isDeleted || isAppeal) ? (
+                      {isDeleted || isAppeal ? (
                         <div className="flex flex-1 flex-col p-3">
                           {l.images[0] && (
                             <img
@@ -347,7 +380,7 @@ export default async function Profile({ params, searchParams }) {
                             </div>
                           )}
 
-                          {own && isDeleted && (
+                          {own && isDeleted && l.deletedReason !== "Удалено владельцем" && (
                             <div className="mt-auto pt-3">
                               <AppealModal
                                 listing={{
@@ -370,19 +403,13 @@ export default async function Profile({ params, searchParams }) {
                       ) : isReview ? (
                         <div className="flex flex-1 flex-col p-3">
                           {l.images[0] && (
-                            <img
-                              src={l.images[0].url}
-                              alt=""
-                              className="mb-3 h-40 w-full rounded-lg object-cover opacity-70"
-                            />
+                            <img src={l.images[0].url} alt="" className="mb-3 h-40 w-full rounded-lg object-cover opacity-70" />
                           )}
                           <b className="opacity-90">{l.title}</b>
                           <p className="text-sm text-accent opacity-90">{l.price.toLocaleString("ru")} ₸</p>
                           <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
                             <b className="block text-amber-400">⏳ Объявление на модерации</b>
-                            <span className="opacity-80">
-                              Обычно проверка занимает до 24 часов
-                            </span>
+                            <span className="opacity-80">Обычно проверка занимает до 24 часов</span>
                           </div>
                           <div className="mt-auto pt-3">
                             <Link href={`/listing/${l.id}`} className="text-xs text-accent underline">
@@ -393,27 +420,18 @@ export default async function Profile({ params, searchParams }) {
                       ) : isNeedsEdit ? (
                         <div className="flex flex-1 flex-col p-3">
                           {l.images[0] && (
-                            <img
-                              src={l.images[0].url}
-                              alt=""
-                              className="mb-3 h-40 w-full rounded-lg object-cover opacity-70"
-                            />
+                            <img src={l.images[0].url} alt="" className="mb-3 h-40 w-full rounded-lg object-cover opacity-70" />
                           )}
                           <b className="opacity-90">{l.title}</b>
                           <p className="text-sm text-accent opacity-90">{l.price.toLocaleString("ru")} ₸</p>
 
                           <div className="mt-2 rounded-lg border border-orange-500/40 bg-orange-500/10 p-2 text-xs">
                             <b className="block text-orange-400">⚠️ Требует правок</b>
-                            {l.moderationNote && (
-                              <span className="mt-1 block opacity-90">{l.moderationNote}</span>
-                            )}
+                            {l.moderationNote && <span className="mt-1 block opacity-90">{l.moderationNote}</span>}
                           </div>
 
                           <div className="mt-auto flex flex-col gap-2 pt-3">
-                            <Link
-                              href={`/listing/${l.id}`}
-                              className="btn w-full justify-center !bg-accent py-1.5 text-xs"
-                            >
+                            <Link href={`/listing/${l.id}`} className="btn w-full justify-center py-1.5 text-xs">
                               Исправить
                             </Link>
                             <form action={resubmitListing}>
@@ -425,14 +443,12 @@ export default async function Profile({ params, searchParams }) {
                           </div>
                         </div>
                       ) : (
-                        <Link href={`/listing/${l.id}`} className="block transition group-hover:border-accent">
+                        <Link href={`/listing/${l.id}`} className="block">
                           {l.images[0] ? (
                             <img
                               src={l.images[0].url}
                               alt=""
-                              className={`h-40 w-full object-cover transition group-hover:scale-[1.02] ${
-                                isHidden ? "opacity-50 grayscale" : ""
-                              }`}
+                              className={`h-40 w-full object-cover transition group-hover:scale-[1.02] ${isHidden ? "opacity-50 grayscale" : ""}`}
                             />
                           ) : (
                             <div className="flex h-40 items-center justify-center bg-white/5 text-4xl opacity-30">📦</div>
@@ -454,8 +470,8 @@ export default async function Profile({ params, searchParams }) {
             <h2 className="mb-3 flex items-center gap-2 text-lg font-bold">
               <Star size={18} className="text-amber-400" />
               Отзывы
-              <span className="rounded-full bg-slate-500/15 px-2 py-0.5 text-xs font-normal opacity-70">
-                {u.reviewsGot.length}
+              <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs font-normal opacity-70">
+                {u._count.reviewsGot}
               </span>
             </h2>
 
@@ -478,7 +494,7 @@ export default async function Profile({ params, searchParams }) {
               </form>
             )}
 
-            {u.reviewsGot.length === 0 ? (
+            {reviews.length === 0 ? (
               <EmptyState
                 icon={Star}
                 title="Отзывов пока нет"
@@ -486,7 +502,7 @@ export default async function Profile({ params, searchParams }) {
               />
             ) : (
               <div className="space-y-2">
-                {u.reviewsGot.map((r) => (
+                {reviews.map((r) => (
                   <div key={r.id} className={`card flex gap-3 text-sm ${r.pinned ? "!border-accent/60" : ""}`}>
                     <Avatar user={r.author} size={36} />
                     <div className="min-w-0 flex-1">
@@ -496,7 +512,7 @@ export default async function Profile({ params, searchParams }) {
                           <Star size={12} /> {r.rating}/10
                         </span>
                         {r.pinned && (
-                          <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-white">
+                          <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-slate-950">
                             ВЛАДЕЛЕЦ ПЛАТФОРМЫ
                           </span>
                         )}

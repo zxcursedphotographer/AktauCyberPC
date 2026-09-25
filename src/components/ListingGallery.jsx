@@ -9,7 +9,7 @@ export default function ListingGallery({ images = [], title = "", dimmed = false
   if (!images.length) {
     return (
       <div className="card !p-2 overflow-hidden">
-        <div className="relative flex aspect-[16/10] w-full items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-900">
+        <div className="relative flex aspect-[16/10] w-full items-center justify-center rounded-lg bg-black/20">
           <span className="text-sm text-slate-400">Нет фотографий</span>
         </div>
       </div>
@@ -19,12 +19,11 @@ export default function ListingGallery({ images = [], title = "", dimmed = false
   const main = images[0];
 
   return (
-    <div className="card !p-2 overflow-hidden space-y-2">
-      {/* Большое фото */}
+    <div className="card space-y-2 overflow-hidden !p-2">
       <button
         type="button"
         onClick={() => setLightbox({ images, index: 0 })}
-        className="group relative flex aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-900"
+        className="group relative flex aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-lg bg-black/20"
       >
         <img
           src={main}
@@ -34,19 +33,20 @@ export default function ListingGallery({ images = [], title = "", dimmed = false
         <img
           src={main}
           alt={title}
-          className={`relative max-h-full max-w-full cursor-zoom-in object-contain transition group-hover:scale-[1.01] ${dimmed ? "opacity-70" : ""}`}
+          className={`relative max-h-full max-w-full cursor-zoom-in object-contain transition group-hover:scale-[1.01] ${
+            dimmed ? "opacity-70" : ""
+          }`}
         />
       </button>
 
-      {/* Миниатюры */}
       {images.length > 1 && (
         <div className="flex snap-x gap-2 overflow-x-auto pb-1 pt-1">
           {images.map((url, i) => (
             <button
-              key={url}
+              key={url + i}
               type="button"
               onClick={() => setLightbox({ images, index: i })}
-              className="relative aspect-square h-20 shrink-0 snap-start overflow-hidden rounded-md border border-slate-200 bg-slate-900 transition hover:border-accent dark:border-white/10"
+              className="relative aspect-square h-20 shrink-0 snap-start overflow-hidden rounded-md border border-white/10 transition hover:border-accent"
             >
               <img src={url} alt="" className="h-full w-full cursor-zoom-in object-cover" />
             </button>

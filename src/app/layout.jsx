@@ -5,7 +5,6 @@ import { MessageSquare, Shield, LifeBuoy, Store, BookOpen } from "lucide-react";
 import { getUser, isStaff, mailOk } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logout, resendVerify } from "./actions";
-import Avatar from "@/components/Avatar";
 import UserMenu from "@/components/UserMenu";
 
 // Логотип — Metal Mania
@@ -35,8 +34,17 @@ const iosevka = localFont({
 });
 
 export const metadata = {
-  title: "AktauCyberPC — б/у ПК и комплектующие с проверкой",
-  description: "Покупайте железо с результатами тестов",
+  title: {
+    default: "AktauCyberPC — б/у ПК и комплектующие с проверкой",
+    template: "%s — AktauCyberPC",
+  },
+  description: "Покупайте и продавайте б/у компьютерные комплектующие в Казахстане. Проверенные продавцы, реальные тесты, честные цены.",
+  keywords: ["б/у ПК", "видеокарта", "комплектующие", "Казахстан", "Актау", "Алматы"],
+  openGraph: {
+    title: "AktauCyberPC — б/у ПК и комплектующие",
+    description: "Проверенные продавцы, реальные тесты, честные цены.",
+    type: "website",
+  },
 };
 
 const navLink =
@@ -106,7 +114,7 @@ export default async function RootLayout({ children }) {
                   <span className="hidden sm:inline">Сообщения</span>
                   {unread > 0 && (
                     <b className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-hot px-1 text-[10px] font-bold text-white">
-                      {unread}
+                      {unread > 99 ? "99+" : unread}
                     </b>
                   )}
                 </Link>

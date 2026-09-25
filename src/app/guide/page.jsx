@@ -4,11 +4,10 @@ import GuideEditor from "@/components/GuideEditor";
 import { seedGuidesIfEmpty } from "@/app/actions";
 
 export const metadata = {
-  title: "Гайд на проверку компонентов — AktauCyberPC",
+  title: "Гайд на проверку компонентов",
 };
 
 export default async function GuidePage() {
-  // Заполняем БД дефолтными гайдами при первом заходе
   await seedGuidesIfEmpty();
 
   const [me, guides] = await Promise.all([
@@ -48,7 +47,7 @@ export default async function GuidePage() {
           <p className="font-semibold text-accent">🛡️ Режим администратора</p>
           <p className="mt-1 opacity-80">
             Вы можете редактировать ссылки на видео. Изменения сохраняются в базе
-            и сразу видны всем пользователям — перезагрузка страницы не нужна.
+            и сразу видны всем пользователям.
           </p>
         </div>
       )}

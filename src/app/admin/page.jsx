@@ -2,139 +2,181 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getUser, isStaff } from "@/lib/auth";
-import { deleteListing, setAccountStatus, resolveReport, sendToReview, closeReview, adjustTrust } from "@/app/actions";
-import Avatar from "@/components/Avatar";
+import { Package, Flag, Users, ShoppingBag, TrendingUp, AlertTriangle, Clock, ScrollText } from "lucide-react";
 
-export default async function Admin() {
-  const me = await getUser(); if (!isStaff(me)) redirect("/");
+export const metadata = { title: "Дашборд" };
+
+export default async function AdminDashboard() {
+  const me = await getUser();
+  if (!isStaff(me)) redirect("/");
   const sa = me.role === "SUPER_ADMIN";
-  const [reports, listings, users, logs] = await Promise.all([
-    prisma.report.findMany({ where: { status: "PENDING" }, include: { reporter: true, target: true } }),
-    prisma.listing.findMany({ orderBy: { createdAt: "desc" }, include: { user: true }, take: 100 }),
-    sa ? prisma.user.findMany({ orderBy: { createdAt: "desc" } }) : [],
-    sa ? prisma.adminLog.findMany({ orderBy: { createdAt: "desc" }, take: 15, include: { admin: true } }) : [],
+
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const [
+    publishedCount,
+    pendingReports,
+    bannedUsers,
+    soldTotal,
+    underReview,
+    needsEdit,
+    appeals,
+    soldToday,
+    newUsersToday,
+    deletedTotal,
+  ] = await Promise.all([
+    prisma.listing.count({ where: { status: "PUBLISHED" } }),
+    prisma.report.count({ where: { status: "PENDING" } }),
+    prisma.user.count({ where: { status: "BANNED" } }),
+    prisma.listing.count({ where: { status: "SOLD" } }),
+    prisma.listing.count({ where: { status: "UNDER_REVIEW" } }),
+    prisma.listing.count({ where: { status: "NEEDS_EDIT" } }),
+    prisma.listing.count({ where: { status: "APPEAL" } }),
+    prisma.listing.count({ where: { status: "SOLD", createdAt: { gte: startOfDay } } }),
+    prisma.user.count({ where: { createdAt: { gte: startOfDay } } }),
+    prisma.listing.count({ where: { status: "DELETED" } }),
   ]);
-  const byCity = {};
-  users.forEach((u) => (byCity[u.city || "Без города"] ||= []).push(u));
+
+  const mainCards = [
+    {
+      label: "Активных объявлений",
+      value: publishedCount,
+      icon: Package,
+      color: "text-accent",
+      href: "/admin/listings?status=PUBLISHED",
+    },
+    {
+      label: "На модерации",
+      value: underReview,
+      icon: Clock,
+      color: "text-amber-400",
+      href: "/admin/listings?status=UNDER_REVIEW",
+      urgent: underReview > 0,
+    },
+    {
+      label: "Жалоб в обработке",
+      value: pendingReports,
+      icon: Flag,
+      color: "text-hot",
+      href: "/admin/reports",
+      urgent: pendingReports > 0,
+    },
+    {
+      label: "Апелляций",
+      value: appeals,
+      icon: AlertTriangle,
+      color: "text-orange-400",
+      href: "/admin/listings?status=APPEAL",
+      urgent: appeals > 0,
+    },
+  ];
 
   return (
-    <div className="space-y-8">
-      <section>
-        <h2 className="mb-2 text-lg font-bold">Жалобы ({reports.length})</h2>
-        {reports.map((r) => (
-          <form key={r.id} action={resolveReport} className="card mb-2 flex flex-wrap items-center gap-3 text-sm">
-            <input type="hidden" name="id" value={r.id} />
-            <span className="flex-1">{r.reporter.username} → <b>{r.target.username}</b>: {r.reason}</span>
-            <button name="verdict" value="confirm" className="btn">Подтвердить</button>
-            <button name="verdict" value="reject" className="rounded-lg border border-white/20 px-3 py-2">Отклонить</button>
-          </form>
-        ))}
-        {reports.length === 0 && <p className="text-sm opacity-70">Жалоб нет.</p>}
-      </section>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Дашборд</h1>
+        <p className="text-sm opacity-70">Общая статистика сайта</p>
+      </div>
 
-      <section>
-        <h2 className="mb-2 text-lg font-bold">Объявления</h2>
-        {listings.map((l) => (
-          <div key={l.id} className="card mb-2 flex flex-wrap items-center gap-3 text-sm">
-            <Link href={`/listing/${l.id}`} className="flex-1 underline">
-              {l.title} · {l.user.username} · {l.status}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {mainCards.map((s) => {
+          const Icon = s.icon;
+          return (
+            <Link
+              key={s.label}
+              href={s.href}
+              className={`card relative transition hover:border-accent ${
+                s.urgent ? "!border-amber-500/40" : ""
+              }`}
+            >
+              {s.urgent && s.value > 0 && (
+                <span className="absolute right-3 top-3 h-2 w-2 animate-pulse rounded-full bg-amber-400" />
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-xs uppercase tracking-wider opacity-60">{s.label}</span>
+                <Icon size={18} className={s.color} />
+              </div>
+              <p className={`mt-3 text-3xl font-bold ${s.color}`}>{s.value}</p>
             </Link>
-            {sa && (
-              <form action={deleteListing} className="flex gap-2">
-                <input type="hidden" name="id" value={l.id} />
-                <select name="reason" required className="input !w-64">
-                  <option value="">Причина удаления…</option>
-                  <option value="1">Не соответствует проверкам / недействительные тесты</option>
-                  <option value="2">Неправильное оформление объявления</option>
-                  <option value="3">Мошенничество или неадекватное поведение</option>
-                </select>
-                <button className="btn !bg-hot">Удалить</button>
-              </form>
-            )}
+          );
+        })}
+      </div>
+
+      <div className="card">
+        <h2 className="mb-3 flex items-center gap-2 font-semibold">
+          <TrendingUp size={16} className="text-accent" /> Сегодня
+        </h2>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+            <div className="text-xs opacity-60">Продано за сегодня</div>
+            <div className="mt-1 text-2xl font-bold">{soldToday}</div>
           </div>
-        ))}
-      </section>
+          <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+            <div className="text-xs opacity-60">Новых юзеров за сегодня</div>
+            <div className="mt-1 text-2xl font-bold">{newUsersToday}</div>
+          </div>
+          <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+            <div className="text-xs opacity-60">Всего удалено</div>
+            <div className="mt-1 text-2xl font-bold">{deletedTotal}</div>
+          </div>
+        </div>
+      </div>
 
-      {sa && (
-        <section>
-          <h2 className="mb-2 text-lg font-bold">Пользователи</h2>
-          {Object.entries(byCity).map(([city, list]) => (
-            <details key={city} open className="mb-3">
-              <summary className="cursor-pointer py-1 font-semibold">{city} ({list.length})</summary>
-              {list.map((u) => (
-                <div key={u.id} className="card mb-2 flex flex-wrap items-center gap-3 text-sm">
-                  <Link href={`/u/${u.username}`} className="flex flex-1 items-center gap-2 underline">
-                    <Avatar user={u} size={28} />{u.username}
-                  </Link>
-                  <span className="opacity-70">траст {u.trustScore} · {u.role} · {u.status}</span>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Link href="/admin/listings?status=NEEDS_EDIT" className="card flex items-center justify-between transition hover:border-orange-500/40">
+          <div>
+            <div className="text-xs opacity-60">Требуют правок</div>
+            <div className="mt-1 text-xl font-bold text-orange-400">{needsEdit}</div>
+          </div>
+          <Package size={20} className="text-orange-400" />
+        </Link>
 
-                  {u.status === "BANNED" ? (
-                    <form action={setAccountStatus}>
-                      <input type="hidden" name="id" value={u.id} />
-                      <button name="status" value="ACTIVE" className="btn">Разблокировать</button>
-                    </form>
-                  ) : u.id !== me.id ? (
-                    <form action={setAccountStatus}>
-                      <input type="hidden" name="id" value={u.id} />
-                      <button name="status" value="BANNED" className="btn !bg-hot">Заблокировать</button>
-                    </form>
-                  ) : null}
+        {sa && (
+          <>
+            <Link href="/admin/users?status=BANNED" className="card flex items-center justify-between transition hover:border-hot/40">
+              <div>
+                <div className="text-xs opacity-60">Забанено юзеров</div>
+                <div className="mt-1 text-xl font-bold text-hot">{bannedUsers}</div>
+              </div>
+              <Users size={20} className="text-hot" />
+            </Link>
 
-                  {u.id !== me.id && (
-                    <>
-                      <form action={sendToReview}>
-                        <input type="hidden" name="id" value={u.id} />
-                        <button className="rounded-lg border border-white/20 px-2.5 py-1 hover:bg-white/10">
-                          На проверку
-                        </button>
-                      </form>
+            <Link href="/admin/listings?status=SOLD" className="card flex items-center justify-between transition hover:border-emerald-500/40">
+              <div>
+                <div className="text-xs opacity-60">Всего сделок</div>
+                <div className="mt-1 text-xl font-bold text-emerald-400">{soldTotal}</div>
+              </div>
+              <ShoppingBag size={20} className="text-emerald-400" />
+            </Link>
+          </>
+        )}
+      </div>
 
-                      {u.status === "UNDER_REVIEW" && (
-                        <form action={closeReview}>
-                          <input type="hidden" name="id" value={u.id} />
-                          <button className="rounded-lg border border-emerald-500/40 px-2.5 py-1 text-emerald-400 hover:bg-emerald-500/10">
-                            Снять с проверки
-                          </button>
-                        </form>
-                      )}
-
-                      <form action={adjustTrust}>
-                        <input type="hidden" name="id" value={u.id} />
-                        <input type="hidden" name="delta" value="5" />
-                        <button className="rounded-lg border border-emerald-500/40 px-2.5 py-1 text-emerald-400 hover:bg-emerald-500/10">
-                          Похвала +5
-                        </button>
-                      </form>
-
-                      <form action={adjustTrust}>
-                        <input type="hidden" name="id" value={u.id} />
-                        <input type="hidden" name="delta" value="-5" />
-                        <button className="rounded-lg border border-hot/40 px-2.5 py-1 text-hot hover:bg-hot/10">
-                          Выговор −5
-                        </button>
-                      </form>
-
-                      <Link
-                        href={`/u/${u.username}#reviews`}
-                        className="rounded-lg border border-accent/40 px-2.5 py-1 text-accent hover:bg-accent/10"
-                      >
-                        Оставить отзыв
-                      </Link>
-                    </>
-                  )}
-                </div>
-              ))}
-            </details>
-          ))}
-
-          <h2 className="mb-2 mt-6 text-lg font-bold">Журнал действий</h2>
-          {logs.map((g) => (
-            <p key={g.id} className="text-sm opacity-80">
-              {g.createdAt.toLocaleString("ru")} · {g.admin.username} · {g.actionType} · {g.reason || g.details || ""}
-            </p>
-          ))}
-        </section>
-      )}
+      <div className="card">
+        <h2 className="mb-2 font-semibold">Быстрые действия</h2>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/admin/listings?status=UNDER_REVIEW" className="btn">
+            Модерация объявлений ({underReview})
+          </Link>
+          <Link href="/admin/reports" className="btn !bg-hot">
+            Проверить жалобы ({pendingReports})
+          </Link>
+          {sa && (
+            <>
+              <Link href="/admin/users" className="btn">
+                Управление юзерами
+              </Link>
+              <Link
+                href="/admin/logs"
+                className="inline-flex items-center gap-2 rounded-lg border border-white/20 px-4 py-2 text-sm hover:bg-white/10"
+              >
+                <ScrollText size={14} /> Журнал
+              </Link>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

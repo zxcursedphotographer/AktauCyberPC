@@ -1,10 +1,10 @@
 "use client";
+
 import { useEffect, useRef, useState } from "react";
 import { editMessage, deleteMessage } from "@/app/actions";
 
 function formatTime(date) {
-  const d = new Date(date);
-  return d.toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
+  return new Date(date).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
 }
 
 export default function ChatThread({ meId, initial }) {
@@ -22,8 +22,15 @@ export default function ChatThread({ meId, initial }) {
         const mine = m.senderId === meId;
         const isEditing = editingId === m.id;
         return (
-          <div key={m.id} className={`group relative flex ${mine ? "justify-end" : "justify-start"}`}>
-            <div className={`max-w-[75%] rounded-lg px-3 py-1.5 ${mine ? "bg-accent text-white" : "bg-slate-200 dark:bg-white/10"}`}>
+          <div
+            key={m.id}
+            className={`group relative flex ${mine ? "justify-end" : "justify-start"}`}
+          >
+            <div
+              className={`max-w-[75%] rounded-lg px-3 py-1.5 ${
+                mine ? "bg-accent text-slate-950" : "bg-white/10"
+              }`}
+            >
               {isEditing ? (
                 <form
                   action={async (fd) => {
@@ -36,39 +43,67 @@ export default function ChatThread({ meId, initial }) {
                   <input
                     name="text"
                     defaultValue={m.text}
-                    className="input !py-0.5"
+                    className="input !py-0.5 !text-sm"
                     autoFocus
                   />
                   <button className="rounded bg-white/20 px-2 text-xs text-white">OK</button>
-                  <button type="button" onClick={() => setEditingId(null)} className="rounded bg-white/20 px-2 text-xs text-white">✕</button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingId(null)}
+                    className="rounded bg-white/20 px-2 text-xs text-white"
+                  >
+                    ✕
+                  </button>
                 </form>
               ) : (
-                <span>{m.text}</span>
+                <span className="break-words">{m.text}</span>
               )}
-              <div className={`mt-0.5 flex items-center gap-1 text-[10px] ${mine ? "justify-end text-white/70" : "text-slate-500 dark:text-white/50"}`}>
+
+              <div
+                className={`mt-0.5 flex items-center gap-1 text-[10px] ${
+                  mine ? "justify-end text-slate-950/70" : "text-slate-400"
+                }`}
+              >
                 {m.editedAt && <span>изм.</span>}
                 <span>{formatTime(m.createdAt)}</span>
-                {mine && <span title={m.isRead ? "Прочитано" : "Отправлено"}>{m.isRead ? "✓✓" : "✓"}</span>}
+                {mine && (
+                  <span title={m.isRead ? "Прочитано" : "Отправлено"}>
+                    {m.isRead ? "✓✓" : "✓"}
+                  </span>
+                )}
               </div>
             </div>
+
             {mine && !isEditing && (
               <div className="relative ml-1 self-center">
                 <button
                   onClick={() => setMenuId(menuId === m.id ? null : m.id)}
                   className="rounded px-1 opacity-0 group-hover:opacity-70 hover:!opacity-100"
                   title="Действия"
-                >⋮</button>
+                >
+                  ⋮
+                </button>
                 {menuId === m.id && (
-                  <div className="absolute right-0 top-full z-10 w-32 rounded-lg border border-white/10 bg-panel p-1 text-left text-xs shadow-lg">
-                    <button
-                      onClick={() => { setEditingId(m.id); setMenuId(null); }}
-                      className="block w-full rounded px-2 py-1 text-left text-slate-700 hover:bg-white/10 dark:text-slate-100"
-                    >Изменить</button>
-                    <form action={deleteMessage}>
-                      <input type="hidden" name="id" value={m.id} />
-                      <button className="block w-full rounded px-2 py-1 text-left text-hot hover:bg-white/10">Удалить</button>
-                    </form>
-                  </div>
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setMenuId(null)} />
+                    <div className="absolute right-0 top-full z-20 w-32 rounded-lg border border-white/10 bg-panel p-1 text-left text-xs shadow-lg">
+                      <button
+                        onClick={() => {
+                          setEditingId(m.id);
+                          setMenuId(null);
+                        }}
+                        className="block w-full rounded px-2 py-1 text-left hover:bg-white/10"
+                      >
+                        Изменить
+                      </button>
+                      <form action={deleteMessage}>
+                        <input type="hidden" name="id" value={m.id} />
+                        <button className="block w-full rounded px-2 py-1 text-left text-hot hover:bg-white/10">
+                          Удалить
+                        </button>
+                      </form>
+                    </div>
+                  </>
                 )}
               </div>
             )}

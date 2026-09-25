@@ -28,7 +28,7 @@ export default function ListingCard({ listing, children }) {
           }`}
         >
           {isSelected ? (
-            <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="currentColor">
+            <svg className="h-4 w-4 text-slate-950" viewBox="0 0 24 24" fill="currentColor">
               <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
             </svg>
           ) : (

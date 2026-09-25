@@ -9,26 +9,44 @@ import ChatForm from "@/components/ChatForm";
 import ChatHeader from "@/components/ChatHeader";
 import { presenceText } from "@/lib/presence";
 
-export const metadata = { title: "Поддержка — AktauCyberPC" };
+export const metadata = { title: "Поддержка" };
 
 export default async function SupportPage({ searchParams: p }) {
-  const me = await getUser(); if (!me) redirect("/login");
-  const isAdmin = me.role === "SUPER_ADMIN";
-  const admin = isAdmin ? me : await prisma.user.findFirst({ where: { role: "SUPER_ADMIN" } });
+  const me = await getUser();
+  if (!me) redirect("/login");
 
+  const isAdmin = me.role === "SUPER_ADMIN";
+
+  const admin = isAdmin
+    ? me
+    : await prisma.user.findFirst({
+        where: { role: "SUPER_ADMIN" },
+        select: { id: true, username: true, avatarUrl: true, lastSeen: true },
+      });
+
+  // Список обращений (только для админа)
   let queue = [];
   if (isAdmin && admin) {
     const senders = await prisma.message.findMany({
       where: { listingId: null, receiverId: admin.id },
       distinct: ["senderId"],
-      select: { sender: true },
+      select: {
+        sender: {
+          select: { id: true, username: true, avatarUrl: true, lastSeen: true },
+        },
+      },
     });
     queue = senders.map((s) => s.sender);
   }
 
   let other;
   if (isAdmin) {
-    other = p.u ? await prisma.user.findUnique({ where: { id: p.u } }) : queue[0];
+    other = p.u
+      ? await prisma.user.findUnique({
+          where: { id: p.u },
+          select: { id: true, username: true, avatarUrl: true, lastSeen: true },
+        })
+      : queue[0];
   } else {
     other = admin;
   }
@@ -36,35 +54,54 @@ export default async function SupportPage({ searchParams: p }) {
   let thread = [];
   let blockedByMe = false;
   let blockedByOther = false;
+
   if (other) {
-    thread = await prisma.message.findMany({
-      where: {
-        listingId: null,
-        OR: [{ senderId: me.id, receiverId: other.id }, { senderId: other.id, receiverId: me.id }],
-        NOT: [
-          { senderId: me.id, deletedForSender: true },
-          { receiverId: me.id, deletedForReceiver: true },
-        ],
-      },
-      orderBy: { createdAt: "asc" },
-      take: 200,
-    });
-    await prisma.message.updateMany({
-      where: { listingId: null, senderId: other.id, receiverId: me.id, isRead: false },
-      data: { isRead: true },
-    });
-    blockedByMe = !!(await prisma.block.findUnique({ where: { blockerId_blockedId: { blockerId: me.id, blockedId: other.id } } }));
-    blockedByOther = !!(await prisma.block.findUnique({ where: { blockerId_blockedId: { blockerId: other.id, blockedId: me.id } } }));
+    const [msgs, blockByMe, blockByOther] = await Promise.all([
+      prisma.message.findMany({
+        where: {
+          listingId: null,
+          OR: [
+            { senderId: me.id, receiverId: other.id },
+            { senderId: other.id, receiverId: me.id },
+          ],
+          NOT: [
+            { senderId: me.id, deletedForSender: true },
+            { receiverId: me.id, deletedForReceiver: true },
+          ],
+        },
+        orderBy: { createdAt: "asc" },
+        take: 200,
+      }),
+      prisma.block.findUnique({
+        where: { blockerId_blockedId: { blockerId: me.id, blockedId: other.id } },
+      }),
+      prisma.block.findUnique({
+        where: { blockerId_blockedId: { blockerId: other.id, blockedId: me.id } },
+      }),
+    ]);
+    thread = msgs;
+    blockedByMe = !!blockByMe;
+    blockedByOther = !!blockByOther;
+
+    prisma.message
+      .updateMany({
+        where: { listingId: null, senderId: other.id, receiverId: me.id, isRead: false },
+        data: { isRead: true },
+      })
+      .catch(() => {});
   }
 
   return (
     <div className={`grid gap-4 md:h-[calc(100vh-120px)] ${isAdmin ? "md:grid-cols-[280px_1fr]" : ""}`}>
       <AutoRefresh every={20000} />
+
       {isAdmin && (
         <aside className="card flex min-h-0 flex-col md:overflow-hidden">
           <h2 className="mb-2 font-semibold">Обращения ({queue.length})</h2>
           <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
-            {queue.length === 0 && <p className="text-sm opacity-70">Пока никто не писал в поддержку.</p>}
+            {queue.length === 0 && (
+              <p className="text-sm opacity-70">Пока никто не писал в поддержку.</p>
+            )}
             {queue.map((u) => (
               <Link
                 key={u.id}
@@ -83,29 +120,51 @@ export default async function SupportPage({ searchParams: p }) {
           </div>
         </aside>
       )}
+
       <section className="card flex min-h-0 flex-col md:overflow-hidden">
-        {!other ? <p className="m-auto opacity-70">{isAdmin ? "Выберите обращение слева." : "Администрация ещё не назначена."}</p> : <>
-          <ChatHeader
-            other={other}
-            listing={null}
-            blockedByMe={blockedByMe}
-            titleOverride={isAdmin ? other.username : "Поддержка AktauCyberPC"}
-          />
+        {!other ? (
+          <p className="m-auto opacity-70">
+            {isAdmin ? "Выберите обращение слева." : "Администрация ещё не назначена."}
+          </p>
+        ) : (
+          <>
+            <ChatHeader
+              other={other}
+              listing={null}
+              blockedByMe={blockedByMe}
+              titleOverride={isAdmin ? other.username : "Поддержка AktauCyberPC"}
+            />
 
-          {blockedByOther && <p className="mb-2 rounded bg-hot/20 p-2 text-xs text-hot">Вы заблокированы. Сообщения не отправляются.</p>}
-          {blockedByMe && <p className="mb-2 rounded bg-amber-500/20 p-2 text-xs text-amber-300">Вы заблокировали этого пользователя. Разблокируйте в меню ⋮, чтобы писать.</p>}
+            {blockedByOther && (
+              <p className="mb-2 rounded bg-hot/20 p-2 text-xs text-hot">
+                Вы заблокированы. Сообщения не отправляются.
+              </p>
+            )}
+            {blockedByMe && (
+              <p className="mb-2 rounded bg-amber-500/20 p-2 text-xs text-amber-300">
+                Вы заблокировали этого пользователя. Разблокируйте в меню ⋮, чтобы писать.
+              </p>
+            )}
 
-          <ChatThread
-            meId={me.id}
-            initial={thread.map((m) => ({ id: m.id, text: m.text, senderId: m.senderId, editedAt: m.editedAt, createdAt: m.createdAt, isRead: m.isRead }))}
-          />
+            <ChatThread
+              meId={me.id}
+              initial={thread.map((m) => ({
+                id: m.id,
+                text: m.text,
+                senderId: m.senderId,
+                editedAt: m.editedAt,
+                createdAt: m.createdAt,
+                isRead: m.isRead,
+              }))}
+            />
 
-          {!blockedByOther && !blockedByMe ? (
-            <ChatForm mode="support" receiverId={other.id} />
-          ) : (
-            <p className="mt-3 text-center text-xs opacity-60">Отправка сообщений недоступна</p>
-          )}
-        </>}
+            {!blockedByOther && !blockedByMe ? (
+              <ChatForm mode="support" receiverId={other.id} />
+            ) : (
+              <p className="mt-3 text-center text-xs opacity-60">Отправка сообщений недоступна</p>
+            )}
+          </>
+        )}
       </section>
     </div>
   );

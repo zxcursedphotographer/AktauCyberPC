@@ -12,48 +12,40 @@ export default function ListingBulkActions({ selectedIds, mode = "active", onCle
 
   if (!selectedIds.length) return null;
 
-  const handleHide = () => {
+  const buildFormData = () => {
     const fd = new FormData();
     selectedIds.forEach((id) => fd.append("ids", id));
+    return fd;
+  };
+
+  const handleHide = () =>
     startTransition(async () => {
-      await hideListings(fd);
+      await hideListings(buildFormData());
       onClear?.();
       router.refresh();
     });
-  };
 
-  const handleUnhide = () => {
-    const fd = new FormData();
-    selectedIds.forEach((id) => fd.append("ids", id));
+  const handleUnhide = () =>
     startTransition(async () => {
-      await unhideManyListings(fd);
+      await unhideManyListings(buildFormData());
       onClear?.();
       router.refresh();
     });
-  };
 
-  const handleDelete = () => {
-    const fd = new FormData();
-    selectedIds.forEach((id) => fd.append("ids", id));
+  const handleDelete = () =>
     startTransition(async () => {
-      await deleteOwnListings(fd);
+      await deleteOwnListings(buildFormData());
       setConfirmDelete(false);
       onClear?.();
       router.refresh();
     });
-  };
 
   return (
     <>
-      {/* Плавающая панель внизу */}
       <div className="fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 rounded-2xl border border-white/10 bg-panel/95 p-3 shadow-2xl backdrop-blur-xl">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <button
-              onClick={onClear}
-              className="rounded-lg p-1.5 hover:bg-white/10"
-              title="Снять выделение"
-            >
+            <button onClick={onClear} className="rounded-lg p-1.5 hover:bg-white/10" title="Снять выделение">
               <X size={16} />
             </button>
             <span className="text-sm font-semibold">
@@ -91,7 +83,6 @@ export default function ListingBulkActions({ selectedIds, mode = "active", onCle
         </div>
       </div>
 
-      {/* Подтверждение удаления */}
       {confirmDelete && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
@@ -100,7 +91,7 @@ export default function ListingBulkActions({ selectedIds, mode = "active", onCle
           <div className="card w-full max-w-md space-y-4" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-bold">Удалить {selectedIds.length} объявлений?</h3>
             <p className="text-sm opacity-70">
-              Они уйдут во вкладку «Удалённые». Можно будет восстановить через апелляцию к администрации.
+              Они уйдут во вкладку «Удалённые». Восстановить можно из профиля.
             </p>
             <div className="flex gap-2">
               <button
@@ -110,11 +101,7 @@ export default function ListingBulkActions({ selectedIds, mode = "active", onCle
               >
                 Отмена
               </button>
-              <button
-                onClick={handleDelete}
-                disabled={pending}
-                className="btn flex-1 justify-center !bg-hot"
-              >
+              <button onClick={handleDelete} disabled={pending} className="btn flex-1 justify-center !bg-hot">
                 {pending ? "Удаление…" : "Удалить"}
               </button>
             </div>

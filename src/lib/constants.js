@@ -1,3 +1,4 @@
+// ---------- Города ----------
 export const CITIES = [
   "Актау",
   "Алматы",
@@ -18,6 +19,7 @@ export const CITIES = [
   "Жанаозен",
 ];
 
+// ---------- Категории ----------
 export const CATS = [
   "Видеокарты",
   "Процессоры",
@@ -33,6 +35,8 @@ export const CATS = [
   "Другое",
 ];
 
+// ---------- Типы тестов ----------
+// Формат: [ключ ComponentType, название категории, подсказка для поля testTitle]
 export const TYPES = [
   ["GPU", "Видеокарты", "FurMark / Superposition, температуры GPU и HotSpot, майнинг не использовалась"],
   ["CPU", "Процессоры", "AIDA64 / OCCT"],
@@ -40,3 +44,19 @@ export const TYPES = [
   ["STORAGE", "Накопители (SSD/HDD)", "CrystalDiskInfo: здоровье, часы наработки"],
   ["MOTHERBOARD", "Материнские платы", "AIDA64"],
 ];
+
+// Маппинг: название категории → ключ ComponentType
+export const CAT_TO_TYPE = Object.fromEntries(TYPES.map(([key, cat]) => [cat, key]));
+
+// Массив ключей ComponentType — для итерации в actions.js
+export const COMPONENT_KEYS = TYPES.map(([k]) => k);
+
+// ---------- Лимиты ----------
+export const MAX_PRICE = 2_000_000_000;
+export const MAX_FILE_SIZE = 5 * 1024 * 1024;
+export const MAX_PHOTOS = 6;
+export const MAX_TITLE = 120;
+export const MAX_DESCRIPTION = 5000;
+export const MAX_BIO = 500;
+export const MAX_MESSAGE = 2000;
+export const MAX_REVIEW_TEXT = 500;

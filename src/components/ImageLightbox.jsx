@@ -68,7 +68,6 @@ export default function ImageLightbox({ images, index, onClose, onIndexChange })
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm"
       onClick={onClose}
     >
-      {/* Кнопка закрыть */}
       <button
         onClick={(e) => { e.stopPropagation(); onClose(); }}
         className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md transition hover:bg-white/20"
@@ -77,29 +76,25 @@ export default function ImageLightbox({ images, index, onClose, onIndexChange })
         <X size={22} />
       </button>
 
-      {/* Стрелка влево */}
       {total > 1 && (
-        <button
-          onClick={(e) => { e.stopPropagation(); prev(); }}
-          className="absolute left-2 top-1/2 z-10 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md transition hover:bg-white/20 sm:left-4"
-          aria-label="Предыдущее"
-        >
-          <ChevronLeft size={26} />
-        </button>
+        <>
+          <button
+            onClick={(e) => { e.stopPropagation(); prev(); }}
+            className="absolute left-2 top-1/2 z-10 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md transition hover:bg-white/20 sm:left-4"
+            aria-label="Предыдущее"
+          >
+            <ChevronLeft size={26} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); next(); }}
+            className="absolute right-2 top-1/2 z-10 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md transition hover:bg-white/20 sm:right-4"
+            aria-label="Следующее"
+          >
+            <ChevronRight size={26} />
+          </button>
+        </>
       )}
 
-      {/* Стрелка вправо */}
-      {total > 1 && (
-        <button
-          onClick={(e) => { e.stopPropagation(); next(); }}
-          className="absolute right-2 top-1/2 z-10 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md transition hover:bg-white/20 sm:right-4"
-          aria-label="Следующее"
-        >
-          <ChevronRight size={26} />
-        </button>
-      )}
-
-      {/* Картинка */}
       <img
         src={current}
         alt=""
@@ -108,7 +103,6 @@ export default function ImageLightbox({ images, index, onClose, onIndexChange })
         draggable={false}
       />
 
-      {/* Счётчик */}
       {total > 1 && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-white/10 px-4 py-1.5 text-sm text-white backdrop-blur-md">
           {index + 1} / {total}

@@ -70,7 +70,8 @@ model User {
   trustScore    Int           @default(50)
   reviewsGiven  Review[]      @relation("author")
   reviewsGot    Review[]      @relation("about")
-  listings      Listing[]
+  listings      Listing[]     @relation("seller")
+  purchases     Listing[]     @relation("buyer")
   sent          Message[]     @relation("sent")
   received      Message[]     @relation("received")
   reportsMade   Report[]      @relation("reporter")
@@ -79,6 +80,9 @@ model User {
   blocksMade    Block[]       @relation("blocker")
   blocksGot     Block[]       @relation("blocked")
   lastSeen      DateTime      @default(now())
+
+  @@index([status])
+  @@index([role])
 }
 
 model Listing {
@@ -89,11 +93,12 @@ model Listing {
   category       String
   status         ListingStatus   @default(UNDER_REVIEW)
   userId         String
-  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User            @relation("seller", fields: [userId], references: [id], onDelete: Cascade)
+  buyerId        String?
+  buyer          User?           @relation("buyer", fields: [buyerId], references: [id], onDelete: SetNull)
   city           String
   district       String
   viewsCount     Int             @default(0)
-  buyerId        String?
   deletedReason  String?
   deletedAt      DateTime?
   appealMessage  String?
@@ -105,7 +110,11 @@ model Listing {
   tests          ComponentTest[]
   messages       Message[]
   reports        Report[]
+
   @@index([status, category, city])
+  @@index([userId, status])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
 }
 
 model ListingImage {
@@ -114,6 +123,8 @@ model ListingImage {
   listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
   url       String
   order     Int     @default(0)
+
+  @@index([listingId, order])
 }
 
 model ComponentTest {
@@ -125,6 +136,8 @@ model ComponentTest {
   resultStatus  TestResult    @default(PASSED)
   metrics       Json
   mediaUrls     String[]
+
+  @@index([listingId, componentType])
 }
 
 model Message {
@@ -141,7 +154,10 @@ model Message {
   deletedForSender   Boolean  @default(false)
   deletedForReceiver Boolean  @default(false)
   createdAt          DateTime @default(now())
+
   @@index([receiverId, isRead])
+  @@index([senderId, receiverId, listingId])
+  @@index([listingId])
 }
 
 model Block {
@@ -151,7 +167,9 @@ model Block {
   blocker   User     @relation("blocker", fields: [blockerId], references: [id], onDelete: Cascade)
   blocked   User     @relation("blocked", fields: [blockedId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+
   @@unique([blockerId, blockedId])
+  @@index([blockedId])
 }
 
 model Report {
@@ -165,6 +183,10 @@ model Report {
   reason       String
   status       ReportStatus @default(PENDING)
   createdAt    DateTime     @default(now())
+
+  @@index([status])
+  @@index([status, createdAt])
+  @@index([targetUserId])
 }
 
 model AdminLog {
@@ -176,6 +198,10 @@ model AdminLog {
   reason     String?
   details    String?
   createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([adminId])
+  @@index([actionType])
 }
 
 model Review {
@@ -188,6 +214,9 @@ model Review {
   pinned    Boolean  @default(false)
   text      String
   createdAt DateTime @default(now())
+
+  @@index([targetId, pinned, createdAt])
+  @@index([authorId])
 }
 
 model Token {
@@ -197,6 +226,9 @@ model Token {
   token     String   @unique
   type      String
   expiresAt DateTime
+
+  @@index([userId, type])
+  @@index([expiresAt])
 }
 
 model RateLog {
@@ -214,4 +246,6 @@ model GuideVideo {
   videoUrl  String?
   order     Int      @default(0)
   updatedAt DateTime @updatedAt
+
+  @@index([order])
 }

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, X, Save, Trash2, ExternalLink, Plus, Check } from "lucide-react";
+import { Pencil, X, Save, Trash2, ExternalLink } from "lucide-react";
 import { saveGuideVideo, clearGuideVideo } from "@/app/actions";
 
 export default function GuideEditor({ item, isAdmin }) {
@@ -24,6 +24,7 @@ export default function GuideEditor({ item, isAdmin }) {
   }
 
   async function handleClear() {
+    if (!confirm("Удалить ссылку на видео для этого компонента?")) return;
     const fd = new FormData();
     fd.append("id", item.id);
     try {
@@ -33,6 +34,12 @@ export default function GuideEditor({ item, isAdmin }) {
     } catch (e) {
       setError(e.message);
     }
+  }
+
+  function cancel() {
+    setEditing(false);
+    setUrl(item.videoUrl || "");
+    setError(null);
   }
 
   return (
@@ -46,7 +53,7 @@ export default function GuideEditor({ item, isAdmin }) {
               href={item.videoUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn"
+              className="btn text-xs"
             >
               <ExternalLink size={14} /> Смотреть видео
             </a>
@@ -83,7 +90,7 @@ export default function GuideEditor({ item, isAdmin }) {
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://youtu.be/..."
               required
-              className="input flex-1 min-w-[200px] text-sm"
+              className="input min-w-[200px] flex-1 text-sm"
               autoFocus
             />
             <button
@@ -104,7 +111,7 @@ export default function GuideEditor({ item, isAdmin }) {
             )}
             <button
               type="button"
-              onClick={() => { setEditing(false); setUrl(item.videoUrl || ""); setError(null); }}
+              onClick={cancel}
               className="inline-flex items-center gap-1 rounded-lg border border-white/20 px-3 py-2 text-xs hover:bg-white/10"
             >
               <X size={14} /> Отмена
@@ -116,9 +123,7 @@ export default function GuideEditor({ item, isAdmin }) {
           </p>
 
           {error && (
-            <p className="rounded border border-hot/40 bg-hot/10 p-2 text-xs text-hot">
-              {error}
-            </p>
+            <p className="rounded border border-hot/40 bg-hot/10 p-2 text-xs text-hot">{error}</p>
           )}
         </form>
       )}

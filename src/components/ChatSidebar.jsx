@@ -1,4 +1,5 @@
 "use client";
+
 import { useState } from "react";
 import Link from "next/link";
 import Avatar from "@/components/Avatar";
@@ -18,7 +19,7 @@ function formatTime(date) {
   return d.toLocaleDateString("ru", { day: "2-digit", month: "2-digit" });
 }
 
-export default function ChatSidebar({ conversations, tab, selLId, selUId, meId, emptyText }) {
+export default function ChatSidebar({ conversations, tab, selLId, selUId, emptyText }) {
   const [q, setQ] = useState("");
 
   const filtered = conversations.filter((c) => {
@@ -35,7 +36,7 @@ export default function ChatSidebar({ conversations, tab, selLId, selUId, meId, 
     `flex-1 rounded-lg px-3 py-1.5 text-center text-sm font-medium transition ${
       tab === t
         ? "bg-accent text-white shadow-lg shadow-accent/30"
-        : "bg-slate-200 dark:bg-white/5 hover:bg-white/10"
+        : "bg-white/5 hover:bg-white/10"
     }`;
 
   return (
@@ -44,7 +45,7 @@ export default function ChatSidebar({ conversations, tab, selLId, selUId, meId, 
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder="Поиск по диалогам и товарам…"
-        className="input"
+        className="input text-sm"
       />
 
       <div className="flex gap-2">

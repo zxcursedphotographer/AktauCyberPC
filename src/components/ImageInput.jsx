@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
 async function compressImage(file, maxPx = 1600) {
   if (!file.type.startsWith("image/") || file.type === "image/gif") {
@@ -33,7 +33,15 @@ export default function ImageInput({
   const limit = single ? 1 : maxFiles;
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [previews, setPreviews] = useState([]);
   const fileInputRef = useRef(null);
+
+  // Создаём preview-URL и освобождаем память при размонтировании
+  useEffect(() => {
+    const urls = files.map((f) => URL.createObjectURL(f));
+    setPreviews(urls);
+    return () => urls.forEach((u) => URL.revokeObjectURL(u));
+  }, [files]);
 
   const syncInput = (newFiles) => {
     if (!fileInputRef.current) return;
@@ -48,9 +56,7 @@ export default function ImageInput({
 
     setLoading(true);
 
-    const compressed = await Promise.all(
-      selected.map((file) => compressImage(file, max))
-    );
+    const compressed = await Promise.all(selected.map((file) => compressImage(file, max)));
 
     const updated = [...files, ...compressed].slice(0, limit);
     setFiles(updated);
@@ -66,40 +72,33 @@ export default function ImageInput({
   };
 
   return (
-    <div
-      className={`space-y-2 text-left ${className}`}
-      onClick={(e) => e.stopPropagation()}
-    >
+    <div className={`space-y-2 text-left ${className}`} onClick={(e) => e.stopPropagation()}>
       <input
         type="file"
         name={name}
         ref={fileInputRef}
         onChange={handleSelect}
-        accept="image/*"
+        accept="image/jpeg,image/png,image/webp,image/gif"
         multiple={!single}
         className="hidden"
       />
 
-      <div className="flex flex-wrap gap-2 items-center">
-        {files.map((file, index) => (
+      <div className="flex flex-wrap items-center gap-2">
+        {previews.map((url, index) => (
           <div
-            key={index}
-            className={`relative overflow-hidden rounded-lg border border-slate-700 bg-slate-900 shrink-0 ${
+            key={url}
+            className={`relative shrink-0 overflow-hidden rounded-lg border border-white/10 bg-black/20 ${
               single ? "h-20 w-20" : "h-14 w-14"
             }`}
           >
-            <img
-              src={URL.createObjectURL(file)}
-              alt="preview"
-              className="w-full h-full object-cover"
-            />
+            <img src={url} alt="preview" className="h-full w-full object-cover" />
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 handleRemove(index);
               }}
-              className="absolute top-0.5 right-0.5 bg-rose-600 hover:bg-rose-500 text-white w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold z-10 cursor-pointer"
+              className="absolute right-0.5 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[10px] font-bold text-white hover:bg-rose-500"
             >
               ✕
             </button>
@@ -114,16 +113,16 @@ export default function ImageInput({
               e.stopPropagation();
               fileInputRef.current?.click();
             }}
-            className={`rounded-lg border-2 border-dashed border-slate-700 hover:border-cyan-500 bg-slate-900/50 hover:bg-slate-900 text-slate-400 hover:text-cyan-400 flex flex-col items-center justify-center transition-all shrink-0 cursor-pointer ${
+            className={`flex shrink-0 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-white/20 bg-black/20 text-slate-400 transition hover:border-accent hover:text-accent ${
               single ? "h-20 w-20" : "h-14 w-14"
             }`}
           >
             {loading ? (
-              <span className="text-[9px] text-cyan-400 animate-pulse">...</span>
+              <span className="animate-pulse text-[9px] text-accent">...</span>
             ) : (
               <>
                 <span className="text-base font-bold leading-none">+</span>
-                <span className="text-[9px] font-medium mt-0.5">Фото</span>
+                <span className="mt-0.5 text-[9px] font-medium">Фото</span>
               </>
             )}
           </button>
@@ -131,7 +130,7 @@ export default function ImageInput({
       </div>
 
       <div className="text-[11px] text-slate-400">
-        Загружено: <span className="text-white font-medium">{files.length}</span> из {limit}
+        Загружено: <span className="font-medium text-white">{files.length}</span> из {limit}
       </div>
     </div>
   );

@@ -6,6 +6,10 @@
   color-scheme: dark;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   @apply bg-slate-950 text-slate-100;
   font-family: var(--font-scribble), ui-sans-serif, system-ui, sans-serif;
@@ -17,6 +21,22 @@ body {
 .font-metal {
   font-family: var(--font-metal), ui-sans-serif, system-ui, sans-serif;
   letter-spacing: 0.02em;
+}
+
+/* Кастомный скроллбар */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
 }
 
 @layer base {
@@ -35,13 +55,13 @@ body {
   .card {
     @apply rounded-xl border border-slate-800 bg-slate-900 p-4 text-slate-100;
   }
-  
+
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-400 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-cyan-300 transition-all active:scale-[0.98] shadow-lg shadow-cyan-500/20;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-400 px-4 py-2.5 text-sm font-bold text-slate-950 shadow-lg shadow-cyan-500/20 transition-all hover:bg-cyan-300 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
   }
-  
+
   .input {
-    @apply w-full rounded-xl border border-slate-800 bg-slate-900 px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all;
+    @apply w-full rounded-xl border border-slate-800 bg-slate-900 px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-400 transition-all focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500;
   }
 
   /* Совместимость со старыми алиасами цветов */
@@ -55,15 +75,25 @@ body {
     @apply text-cyan-400;
   }
   .bg-accent {
-    @apply bg-cyan-400 text-slate-950 font-bold;
+    @apply bg-cyan-400 font-bold text-slate-950;
   }
   .bg-hot {
-    @apply bg-rose-500 text-white font-bold;
+    @apply bg-rose-500 font-bold text-white;
   }
 }
 
-/* Исправление цвета опций в выпадающих списках */
+/* Цвет опций в выпадающих списках */
 select option {
-  background-color: #0f172a !important; /* bg-slate-900 */
-  color: #f8fafc !important; /* text-slate-100 */
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+/* Убираем стрелки у number input */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
 }

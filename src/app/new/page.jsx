@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
 import { getUser, mailOk } from "@/lib/auth";
 import { createListing } from "@/app/actions";
-import { CATS, TYPES } from "@/lib/constants";
+import { CATS, TYPES, CITIES } from "@/lib/constants";
 import NewListingFormClient from "@/components/NewListingFormClient";
 
-export const metadata = { title: "Создать объявление — AktauCyberPC" };
+export const metadata = { title: "Создать объявление" };
 
 export default async function NewListing() {
   const me = await getUser();
@@ -12,24 +12,28 @@ export default async function NewListing() {
 
   if (!mailOk(me)) {
     return (
-      <div className="mx-auto max-w-xl my-12 p-6 rounded-2xl bg-slate-900 border border-slate-800 text-center shadow-xl">
-        <div className="text-amber-400 text-4xl mb-3">✉️</div>
-        <h2 className="text-xl font-bold text-slate-100 mb-2">Подтвердите вашу почту</h2>
-        <p className="text-slate-400 text-sm">
-          Ссылка для подтверждения аккаунта отправлена на <span className="text-cyan-400 font-medium">{me.email}</span>.
-        </p>
-      </div>
+      <main className="mx-auto my-12 max-w-xl p-6 text-center">
+        <div className="card">
+          <div className="mb-3 text-4xl text-amber-400">✉️</div>
+          <h2 className="mb-2 text-xl font-bold">Подтвердите вашу почту</h2>
+          <p className="text-sm text-slate-400">
+            Ссылка отправлена на{" "}
+            <span className="font-medium text-accent">{me.email}</span>.
+          </p>
+        </div>
+      </main>
     );
   }
 
   return (
-    <main className="min-h-screen py-8 pb-28 px-4 sm:px-6 bg-slate-950 text-slate-100 flex justify-center">
-      <NewListingFormClient 
-        action={createListing} 
-        cats={CATS} 
-        types={TYPES} 
-        defaultCity={me.city || "Актау"} 
-        defaultDistrict={me.district || ""} 
+    <main className="flex justify-center px-4 py-8 pb-28 sm:px-6">
+      <NewListingFormClient
+        action={createListing}
+        cats={CATS}
+        types={TYPES}
+        cities={CITIES}
+        defaultCity={me.city || "Актау"}
+        defaultDistrict={me.district || ""}
       />
     </main>
   );
