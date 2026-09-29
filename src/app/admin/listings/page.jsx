@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   deleteListing,
@@ -36,7 +38,11 @@ const CHANGE_REASONS = [
 ];
 
 export default async function AdminListings({ searchParams }) {
-  const statusFilter = searchParams.status || "";
+  const me = await getUser();
+  // Все действия на этой странице доступны только владельцу
+  if (me?.role !== "SUPER_ADMIN") redirect("/admin");
+  const VALID = ["PUBLISHED", "SOLD", "DELETED", "UNDER_REVIEW", "NEEDS_EDIT", "DRAFT", "APPEAL", "HIDDEN"];
+  const statusFilter = VALID.includes(searchParams.status) ? searchParams.status : "";
   const where = statusFilter ? { status: statusFilter } : {};
 
   const listings = await prisma.listing.findMany({

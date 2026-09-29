@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Avatar from "@/components/Avatar";
 
@@ -40,6 +42,8 @@ const ACTION_INFO = {
 };
 
 export default async function LogsPage({ searchParams }) {
+  const me = await getUser();
+  if (me?.role !== "SUPER_ADMIN") redirect("/admin");
   const typeFilter = searchParams.type || "";
   const where = typeFilter ? { actionType: typeFilter } : {};
 

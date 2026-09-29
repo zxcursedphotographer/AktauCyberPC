@@ -44,14 +44,14 @@ export default async function AdminDashboard() {
       value: publishedCount,
       icon: Package,
       color: "text-accent",
-      href: "/admin/listings?status=PUBLISHED",
+      href: sa ? "/admin/listings?status=PUBLISHED" : "/admin",
     },
     {
       label: "На модерации",
       value: underReview,
       icon: Clock,
       color: "text-amber-400",
-      href: "/admin/listings?status=UNDER_REVIEW",
+      href: sa ? "/admin/listings?status=UNDER_REVIEW" : "/admin",
       urgent: underReview > 0,
     },
     {
@@ -67,7 +67,7 @@ export default async function AdminDashboard() {
       value: appeals,
       icon: AlertTriangle,
       color: "text-orange-400",
-      href: "/admin/listings?status=APPEAL",
+      href: sa ? "/admin/listings?status=APPEAL" : "/admin",
       urgent: appeals > 0,
     },
   ];
@@ -124,7 +124,7 @@ export default async function AdminDashboard() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <Link href="/admin/listings?status=NEEDS_EDIT" className="card flex items-center justify-between transition hover:border-orange-500/40">
+        <Link href={sa ? "/admin/listings?status=NEEDS_EDIT" : "/admin"} className="card flex items-center justify-between transition hover:border-orange-500/40">
           <div>
             <div className="text-xs opacity-60">Требуют правок</div>
             <div className="mt-1 text-xl font-bold text-orange-400">{needsEdit}</div>
@@ -156,9 +156,11 @@ export default async function AdminDashboard() {
       <div className="card">
         <h2 className="mb-2 font-semibold">Быстрые действия</h2>
         <div className="flex flex-wrap gap-2">
-          <Link href="/admin/listings?status=UNDER_REVIEW" className="btn">
-            Модерация объявлений ({underReview})
-          </Link>
+          {sa && (
+            <Link href="/admin/listings?status=UNDER_REVIEW" className="btn">
+              Модерация объявлений ({underReview})
+            </Link>
+          )}
           <Link href="/admin/reports" className="btn !bg-hot">
             Проверить жалобы ({pendingReports})
           </Link>

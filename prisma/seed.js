@@ -3,6 +3,10 @@ const bcrypt = require("bcryptjs");
 const db = new PrismaClient();
 
 async function main() {
+  if (process.env.NODE_ENV === "production" || process.env.ALLOW_SEED !== "yes") {
+    console.log("Seed удаляет ВСЕ данные (пользователи, объявления, сообщения). Для запуска на тестовой БД: ALLOW_SEED=yes node prisma/seed.js");
+    return;
+  }
   await db.adminLog.deleteMany(); await db.message.deleteMany(); await db.report.deleteMany();
   await db.listing.deleteMany(); await db.user.deleteMany();
   const passwordHash = await bcrypt.hash("password123", 10);

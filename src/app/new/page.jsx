@@ -12,7 +12,7 @@ export default async function NewListing() {
 
   if (!mailOk(me)) {
     return (
-      <main className="mx-auto my-12 max-w-xl p-6 text-center">
+      <div className="mx-auto my-12 max-w-xl p-6 text-center">
         <div className="card">
           <div className="mb-3 text-4xl text-amber-400">✉️</div>
           <h2 className="mb-2 text-xl font-bold">Подтвердите вашу почту</h2>
@@ -20,13 +20,16 @@ export default async function NewListing() {
             Ссылка отправлена на{" "}
             <span className="font-medium text-accent">{me.email}</span>.
           </p>
+          <p className="mt-2 text-xs text-slate-500">
+            Не пришло? Проверьте «Спам» или нажмите «Отправить письмо ещё раз» в жёлтой полосе сверху.
+          </p>
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="flex justify-center px-4 py-8 pb-28 sm:px-6">
+    <div className="flex justify-center px-0 py-4 pb-28 sm:px-2">
       <NewListingFormClient
         action={createListing}
         cats={CATS}
@@ -35,6 +38,6 @@ export default async function NewListing() {
         defaultCity={me.city || "Актау"}
         defaultDistrict={me.district || ""}
       />
-    </main>
+    </div>
   );
 }

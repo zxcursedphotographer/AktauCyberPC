@@ -27,16 +27,25 @@ export default async function SupportPage({ searchParams: p }) {
   // Список обращений (только для админа)
   let queue = [];
   if (isAdmin && admin) {
-    const senders = await prisma.message.findMany({
-      where: { listingId: null, receiverId: admin.id },
-      distinct: ["senderId"],
-      select: {
-        sender: {
-          select: { id: true, username: true, avatarUrl: true, lastSeen: true },
+    const [senders, unreadRows] = await Promise.all([
+      prisma.message.findMany({
+        where: { listingId: null, receiverId: admin.id },
+        distinct: ["senderId"],
+        orderBy: { createdAt: "desc" }, // свежие обращения сверху
+        select: {
+          sender: {
+            select: { id: true, username: true, avatarUrl: true, lastSeen: true },
+          },
         },
-      },
-    });
-    queue = senders.map((s) => s.sender);
+      }),
+      prisma.message.groupBy({
+        by: ["senderId"],
+        where: { listingId: null, receiverId: admin.id, isRead: false },
+        _count: { _all: true },
+      }),
+    ]);
+    const unreadMap = Object.fromEntries(unreadRows.map((r) => [r.senderId, r._count._all]));
+    queue = senders.map((s) => ({ ...s.sender, unread: unreadMap[s.sender.id] || 0 }));
   }
 
   let other;
@@ -115,6 +124,9 @@ export default async function SupportPage({ searchParams: p }) {
                   <b className="block truncate">{u.username}</b>
                   <span className="text-xs opacity-60">{presenceText(u.lastSeen)}</span>
                 </div>
+                {u.unread > 0 && (
+                  <span className="shrink-0 rounded-full bg-hot px-1.5 text-xs font-bold text-white">{u.unread}</span>
+                )}
               </Link>
             ))}
           </div>

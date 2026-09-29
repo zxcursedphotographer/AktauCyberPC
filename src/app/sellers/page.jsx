@@ -33,7 +33,7 @@ export default async function Sellers({ searchParams: p }) {
       orderBy,
       take: PAGE_SIZE,
       skip,
-      include: { _count: { select: { listings: true } } },
+      include: { _count: { select: { listings: { where: { status: "PUBLISHED" } } } } },
     }),
     prisma.user.count({ where }),
   ]);

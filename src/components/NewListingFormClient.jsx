@@ -1,11 +1,46 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useFormState, useFormStatus } from "react-dom";
 import Link from "next/link";
 import ImageInput from "@/components/ImageInput";
-import { CAT_TO_TYPE } from "@/lib/constants";
+import ComponentPicker from "@/components/ComponentPicker";
+import {
+  GPU_PRESETS,
+  CPU_PRESETS,
+  RAM_PRESETS,
+  MOTHERBOARD_PRESETS,
+  PSU_PRESETS,
+  COMPONENT_LABELS,
+  PC_BUILD_COMPONENTS,
+} from "@/lib/constants";
 
-const REQUIRED_TEST_CATEGORIES = ["Видеокарты", "Процессоры", "Готовые ПК"];
+const CATEGORY_SINGLE_COMPONENT = {
+  "Видеокарты": "GPU",
+  "Процессоры": "CPU",
+  "Оперативная память": "RAM",
+  "Материнские платы": "MOTHERBOARD",
+  "Блоки питания": "PSU",
+};
+
+const PRESETS_BY_COMPONENT = {
+  GPU: GPU_PRESETS,
+  CPU: CPU_PRESETS,
+  RAM: RAM_PRESETS,
+  MOTHERBOARD: MOTHERBOARD_PRESETS,
+  PSU: PSU_PRESETS,
+};
+
+const PICKER_CATEGORIES = ["Видеокарты", "Процессоры"];
+
+function SubmitButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button type="submit" disabled={pending} className="btn flex-1 py-3.5 text-center disabled:opacity-60">
+      {pending ? "Публикуем… это может занять до минуты" : "Опубликовать"}
+    </button>
+  );
+}
 
 export default function NewListingFormClient({
   action,
@@ -15,8 +50,59 @@ export default function NewListingFormClient({
   defaultCity,
   defaultDistrict,
 }) {
+  const [state, formAction] = useFormState(action, null);
   const [selectedCategory, setSelectedCategory] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+
+  // Одиночный компонент — выбранная строка "Brand Model"
+  const [singlePick, setSinglePick] = useState("");
+
+  // Старые селекты (RAM/MB/PSU)
+  const [singleBrand, setSingleBrand] = useState("");
+  const [singleModel, setSingleModel] = useState("");
+
+  // Компоненты готового ПК
+  const [pcComponents, setPcComponents] = useState({
+    GPU: { brand: "", model: "" },
+    CPU: { brand: "", model: "" },
+    RAM: { brand: "", model: "" },
+    MOTHERBOARD: { brand: "", model: "" },
+    PSU: { brand: "", model: "" },
+  });
+
+  const singleComponentKey = useMemo(
+    () => CATEGORY_SINGLE_COMPONENT[selectedCategory] || null,
+    [selectedCategory]
+  );
+
+  const isPcBuild = selectedCategory === "Готовые ПК";
+  const usePicker = PICKER_CATEGORIES.includes(selectedCategory);
+
+  const parsedPick = useMemo(() => {
+    if (!singlePick || !singleComponentKey) return { brand: "", model: "" };
+    const presets = PRESETS_BY_COMPONENT[singleComponentKey];
+    for (const brand of Object.keys(presets)) {
+      const model = presets[brand].find((m) => `${brand} ${m}` === singlePick);
+      if (model) return { brand, model };
+    }
+    return { brand: "", model: "" };
+  }, [singlePick, singleComponentKey]);
+
+  const handleCategoryChange = (e) => {
+    setSelectedCategory(e.target.value);
+    setSinglePick("");
+    setSingleBrand("");
+    setSingleModel("");
+    setErrorMessage("");
+  };
+
+  const updatePcComponent = (type, field, value) => {
+    setPcComponents((prev) => {
+      const next = { ...prev, [type]: { ...prev[type], [field]: value } };
+      if (field === "brand") next[type].model = "";
+      return next;
+    });
+  };
 
   const handleSubmit = (e) => {
     setErrorMessage("");
@@ -29,7 +115,6 @@ export default function NewListingFormClient({
       return files.filter((f) => f && f.size > 0).length;
     };
 
-    // 1. Фото товара
     const mainPhotosCount = getFilesCount("photos");
     if (mainPhotosCount === 0) {
       e.preventDefault();
@@ -42,7 +127,37 @@ export default function NewListingFormClient({
       return;
     }
 
-    // 2. Обязательные тесты по категории
+    if (singleComponentKey) {
+      if (usePicker) {
+        if (!parsedPick.brand || !parsedPick.model) {
+          e.preventDefault();
+          setErrorMessage(
+            `⚠️ Выберите ${COMPONENT_LABELS[singleComponentKey].toLowerCase()} из списка.`
+          );
+          return;
+        }
+      } else {
+        if (!singleBrand || !singleModel) {
+          e.preventDefault();
+          setErrorMessage(
+            `⚠️ Выберите ${COMPONENT_LABELS[singleComponentKey].toLowerCase()} (бренд и модель).`
+          );
+          return;
+        }
+      }
+    }
+
+    if (isPcBuild) {
+      for (const type of PC_BUILD_COMPONENTS) {
+        const c = pcComponents[type];
+        if (!c.brand || !c.model) {
+          e.preventDefault();
+          setErrorMessage(`⚠️ Для готового ПК выберите: ${COMPONENT_LABELS[type]}.`);
+          return;
+        }
+      }
+    }
+
     const isGpuCategory = cat.includes("видеокарт") || cat.includes("gpu");
     const isCpuCategory = cat.includes("процессор") || cat.includes("cpu");
     const isPcCategory = cat.includes("готов") || cat.includes("пк") || cat.includes("сборка");
@@ -71,7 +186,7 @@ export default function NewListingFormClient({
   };
 
   return (
-    <form action={action} onSubmit={handleSubmit} className="w-full max-w-3xl space-y-6">
+    <form action={formAction} onSubmit={handleSubmit} className="w-full max-w-3xl space-y-6">
       <div>
         <h1 className="text-3xl font-extrabold tracking-tight">Новое объявление</h1>
         <p className="mt-1 text-sm text-slate-400">
@@ -79,7 +194,6 @@ export default function NewListingFormClient({
         </p>
       </div>
 
-      {/* Основной блок */}
       <div className="card space-y-5">
         <h2 className="border-b border-white/10 pb-3 text-lg font-semibold">
           Основная информация
@@ -103,7 +217,7 @@ export default function NewListingFormClient({
               name="category"
               required
               value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
+              onChange={handleCategoryChange}
               className="input cursor-pointer"
             >
               <option value="">Выберите категорию</option>
@@ -119,13 +233,142 @@ export default function NewListingFormClient({
               name="price"
               type="number"
               required
-              min={0}
+              min={1}
               max={2000000000}
               placeholder="150000"
               className="input"
             />
           </div>
         </div>
+
+        {/* Одиночный выбор компонента */}
+        {singleComponentKey && (
+          <div className="space-y-3 rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-cyan-400">
+                {COMPONENT_LABELS[singleComponentKey]}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Выберите точную модель из списка — она будет использоваться в фильтрах.
+              </p>
+            </div>
+
+            {usePicker ? (
+              <>
+                <ComponentPicker
+                  presets={PRESETS_BY_COMPONENT[singleComponentKey]}
+                  value={singlePick}
+                  onChange={setSinglePick}
+                  placeholder={`Например: ${singleComponentKey === "GPU" ? "NVIDIA RTX 3070" : "AMD Ryzen 5 5600X"}`}
+                />
+                {/* Скрытые поля для отправки на сервер */}
+                <input type="hidden" name="brand" value={parsedPick.brand} />
+                <input type="hidden" name="modelPreset" value={parsedPick.model} />
+              </>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-400">Бренд *</label>
+                  <select
+                    name="brand"
+                    required
+                    value={singleBrand}
+                    onChange={(e) => { setSingleBrand(e.target.value); setSingleModel(""); }}
+                    className="input cursor-pointer"
+                  >
+                    <option value="">Выберите бренд</option>
+                    {Object.keys(PRESETS_BY_COMPONENT[singleComponentKey]).map((b) => (
+                      <option key={b} value={b}>{b}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-400">Модель *</label>
+                  <select
+                    name="modelPreset"
+                    required
+                    value={singleModel}
+                    onChange={(e) => setSingleModel(e.target.value)}
+                    disabled={!singleBrand}
+                    className="input cursor-pointer disabled:opacity-50"
+                  >
+                    <option value="">{singleBrand ? "Выберите модель" : "Сначала бренд"}</option>
+                    {singleBrand &&
+                      PRESETS_BY_COMPONENT[singleComponentKey][singleBrand]?.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Готовый ПК */}
+        {isPcBuild && (
+          <div className="space-y-3 rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-cyan-400">
+                Комплектация готового ПК
+              </p>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Выберите каждый компонент из списка. Это позволит покупателям искать сборки по железу.
+              </p>
+            </div>
+
+            {PC_BUILD_COMPONENTS.map((type) => {
+              const presets = PRESETS_BY_COMPONENT[type];
+              const c = pcComponents[type];
+              return (
+                <div
+                  key={type}
+                  className="grid grid-cols-1 gap-3 rounded-lg border border-white/10 bg-black/20 p-3 sm:grid-cols-3"
+                >
+                  <div className="sm:col-span-3">
+                    <p className="text-sm font-semibold text-slate-200">
+                      {COMPONENT_LABELS[type]}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-400">Бренд *</label>
+                    <select
+                      name={`pc_${type}_brand`}
+                      required
+                      value={c.brand}
+                      onChange={(e) => updatePcComponent(type, "brand", e.target.value)}
+                      className="input cursor-pointer text-sm"
+                    >
+                      <option value="">Выберите бренд</option>
+                      {Object.keys(presets).map((b) => (
+                        <option key={b} value={b}>{b}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="mb-1 block text-xs font-medium text-slate-400">Модель *</label>
+                    <select
+                      name={`pc_${type}_model`}
+                      required
+                      value={c.model}
+                      onChange={(e) => updatePcComponent(type, "model", e.target.value)}
+                      disabled={!c.brand}
+                      className="input cursor-pointer text-sm disabled:opacity-50"
+                    >
+                      <option value="">{c.brand ? "Выберите модель" : "Сначала бренд"}</option>
+                      {c.brand &&
+                        presets[c.brand]?.map((m) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <div>
           <label className="mb-1.5 block text-xs font-medium text-slate-400">Описание *</label>
@@ -177,12 +420,12 @@ export default function NewListingFormClient({
         </div>
       </div>
 
-      {/* Блок тестов */}
+      {/* Блок тестов — без изменений */}
       <div className="card space-y-4">
         <div>
           <h2 className="text-lg font-semibold">Проверенные компоненты</h2>
           <p className="mt-0.5 text-xs text-slate-400">
-            Прикрепите результаты стресс-тестов для повышения доверия покупателей.
+            Прикрепите результаты стресс-тестов для повышения доверия покупателей. Итог проверки (пройден / не пройден) ставит модератор.
           </p>
         </div>
 
@@ -228,14 +471,6 @@ export default function NewListingFormClient({
                   </div>
 
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-400">Результат</label>
-                    <select name={`t_${k}_result`} className="input cursor-pointer text-sm">
-                      <option value="PASSED">✅ Тест пройден</option>
-                      <option value="FAILED">❌ Тест не пройден</option>
-                    </select>
-                  </div>
-
-                  <div>
                     <label className="mb-1 block text-xs font-medium text-slate-400">
                       Показатели (каждый с новой строки)
                     </label>
@@ -262,18 +497,14 @@ export default function NewListingFormClient({
         </div>
       </div>
 
-      {/* Ошибка валидации */}
-      {errorMessage && (
-        <div className="rounded-xl border border-hot/30 bg-hot/10 p-4 text-sm font-medium text-hot">
-          {errorMessage}
+      {(errorMessage || state?.error) && (
+        <div role="alert" className="rounded-xl border border-hot/30 bg-hot/10 p-4 text-sm font-medium text-hot">
+          {errorMessage || state.error}
         </div>
       )}
 
-      {/* Кнопки */}
       <div className="flex gap-4 pt-2">
-        <button type="submit" className="btn flex-1 py-3.5 text-center">
-          Опубликовать
-        </button>
+        <SubmitButton />
         <Link
           href="/"
           className="flex-1 rounded-xl border border-white/20 bg-slate-900 px-6 py-3.5 text-center font-semibold text-slate-300 transition hover:bg-slate-800"

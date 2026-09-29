@@ -18,7 +18,7 @@ const CITIES = [
 
 const AKTAU_DISTRICTS = Array.from({ length: 35 }, (_, i) => `${i + 1}-й микрорайон`);
 
-export default function NewListingFormClient({ action, cats, types, defaultCity, defaultDistrict }) {
+export default function NewListingForm({ action, cats, types, defaultCity, defaultDistrict }) {
   return (
     <form action={action} className="w-full max-w-3xl space-y-6">
       <div>
@@ -30,7 +30,6 @@ export default function NewListingFormClient({ action, cats, types, defaultCity,
         </p>
       </div>
 
-      {/* Основная информация */}
       <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
         <h2 className="text-lg font-semibold text-slate-200 border-b border-slate-800 pb-2">
           Основная информация
@@ -89,7 +88,6 @@ export default function NewListingFormClient({ action, cats, types, defaultCity,
           />
         </div>
 
-        {/* Локация */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1">Город</label>
@@ -124,7 +122,6 @@ export default function NewListingFormClient({ action, cats, types, defaultCity,
           </div>
         </div>
 
-        {/* Загрузка фото товара */}
         <div className="pt-2">
           <label className="block text-xs font-medium text-slate-400 mb-2">
             Фотографии товара
@@ -133,7 +130,6 @@ export default function NewListingFormClient({ action, cats, types, defaultCity,
         </div>
       </div>
 
-      {/* Проверенные компоненты (Тесты) */}
       <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
         <div>
           <h2 className="text-lg font-semibold text-slate-200">Проверенные компоненты</h2>
@@ -204,7 +200,6 @@ export default function NewListingFormClient({ action, cats, types, defaultCity,
         </div>
       </div>
 
-      {/* Кнопки */}
       <div className="flex gap-4 pt-2">
         <button
           type="submit"

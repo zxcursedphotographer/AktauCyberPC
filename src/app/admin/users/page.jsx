@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getUser } from "@/lib/auth";
 import Avatar from "@/components/Avatar";
@@ -21,8 +22,10 @@ const STATUS_BADGE = {
 
 export default async function AdminUsers({ searchParams }) {
   const me = await getUser();
+  // Почты и действия над аккаунтами — только владелец (раньше страница открывалась и обычным админам)
+  if (me?.role !== "SUPER_ADMIN") redirect("/admin");
   const q = (searchParams.q || "").trim();
-  const statusFilter = searchParams.status || "";
+  const statusFilter = ["ACTIVE", "UNDER_REVIEW", "BANNED"].includes(searchParams.status) ? searchParams.status : "";
 
   const where = {
     ...(q

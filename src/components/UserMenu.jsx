@@ -70,11 +70,18 @@ export default function UserMenu({ username, avatarUrl, logoutAction }) {
             Мой профиль
           </Link>
           <Link
-            href={`/u/${username}?tab=review`}
+            href={`/u/${username}`}
             onClick={() => setOpen(false)}
             className="block rounded-lg px-3 py-2 transition hover:bg-white/10"
           >
             Мои объявления
+          </Link>
+          <Link
+            href="/new"
+            onClick={() => setOpen(false)}
+            className="block rounded-lg px-3 py-2 font-semibold text-accent transition hover:bg-white/10"
+          >
+            + Создать объявление
           </Link>
           <Link
             href={`/u/${username}#reviews`}

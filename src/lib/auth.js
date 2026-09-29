@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import { prisma } from "./prisma";
@@ -29,7 +30,8 @@ export async function clearSession() {
   cookies().delete("s");
 }
 
-export async function getUser() {
+// cache(): layout и страница в одном запросе не ходят в БД дважды
+export const getUser = cache(async function getUser() {
   try {
     const token = cookies().get("s")?.value;
     if (!token) return null;
@@ -45,7 +47,7 @@ export async function getUser() {
   } catch {
     return null;
   }
-}
+});
 
 export async function requireUser() {
   const u = await getUser();

@@ -34,6 +34,7 @@ const iosevka = localFont({
 });
 
 export const metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
   title: {
     default: "AktauCyberPC — б/у ПК и комплектующие с проверкой",
     template: "%s — AktauCyberPC",
@@ -133,6 +134,19 @@ export default async function RootLayout({ children }) {
             </div>
           </nav>
         </header>
+
+        {/* Мобильная навигация: на телефоне верхние ссылки скрыты, поэтому дублируем их строкой */}
+        <div className="mx-auto mt-2 flex max-w-7xl gap-1 overflow-x-auto px-3 md:hidden">
+          <Link href="/sellers" className={`${navLink} shrink-0 whitespace-nowrap`}><Store size={16} /> Продавцы</Link>
+          <Link href="/guide" className={`${navLink} shrink-0 whitespace-nowrap`}><BookOpen size={16} /> Гайды</Link>
+          <Link href="/support" className={`${navLink} shrink-0 whitespace-nowrap`}><LifeBuoy size={16} /> Поддержка</Link>
+          {(me?.role === "SUPER_ADMIN" || me?.status === "UNDER_REVIEW") && (
+            <Link href="/review" className={`${navLink} shrink-0 whitespace-nowrap`}>Проверка</Link>
+          )}
+          {isStaff(me) && (
+            <Link href="/admin" className={`${navLink} shrink-0 whitespace-nowrap`}><Shield size={16} /> Админка</Link>
+          )}
+        </div>
 
         {me && !mailOk(me) && (
           <form

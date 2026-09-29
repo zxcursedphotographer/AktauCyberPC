@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { getUser } from "@/lib/auth";
-import { updateProfile, removeMedia, setTrust, addReview, updateUsername, resubmitListing } from "@/app/actions";
+import { getUser, isStaff } from "@/lib/auth";
+import { CITIES } from "@/lib/constants";
+import { updateProfile, removeMedia, setTrust, addReview, updateUsername, resubmitListing, restoreOwnListing } from "@/app/actions";
 import TrustBadge from "@/components/TrustBadge";
 import Avatar from "@/components/Avatar";
 import ImageInput from "@/components/ImageInput";
@@ -33,9 +34,20 @@ function EmptyState({ icon: Icon, title, subtitle, action }) {
   );
 }
 
+const PROFILE_ERRORS = {
+  username: "Ник: 3–20 символов, только латиница, цифры и _.",
+  taken: "Этот ник уже занят.",
+  rate: "Ник можно менять не чаще 3 раз в сутки.",
+  upload: "Не удалось загрузить изображение. Подойдут JPG, PNG, WEBP или GIF до 5 МБ.",
+};
+
+const safeDecode = (v) => {
+  try { return decodeURIComponent(v); } catch { return v; }
+};
+
 export default async function Profile({ params, searchParams }) {
   const u = await prisma.user.findUnique({
-    where: { username: decodeURIComponent(params.username) },
+    where: { username: safeDecode(params.username) },
     select: {
       id: true,
       username: true,
@@ -55,6 +67,8 @@ export default async function Profile({ params, searchParams }) {
   if (!u) notFound();
 
   const me = await getUser();
+  // Заблокированный аккаунт видит только персонал
+  if (u.status === "BANNED" && !isStaff(me)) notFound();
   const sa = me?.role === "SUPER_ADMIN";
   const own = me?.id === u.id;
   const edit = own || sa;
@@ -83,7 +97,7 @@ export default async function Profile({ params, searchParams }) {
 
   // Разбивка по статусам
   const byStatus = {
-    active: listings.filter((l) => l.status === "PUBLISHED" || l.status === "DRAFT"),
+    active: listings.filter((l) => l.status === "PUBLISHED" || (edit && l.status === "DRAFT")),
     review: listings.filter((l) => l.status === "UNDER_REVIEW"),
     needs_edit: listings.filter((l) => l.status === "NEEDS_EDIT"),
     sold: listings.filter((l) => l.status === "SOLD"),
@@ -161,6 +175,12 @@ export default async function Profile({ params, searchParams }) {
               Статус: {status.label}
             </span>
 
+            {PROFILE_ERRORS[searchParams.err] && (
+              <p role="alert" className="mt-3 rounded-lg border border-hot/40 bg-hot/10 p-2 text-left text-xs text-hot">
+                {PROFILE_ERRORS[searchParams.err]}
+              </p>
+            )}
+
             {edit && (
               <a
                 href="#edit"
@@ -192,7 +212,7 @@ export default async function Profile({ params, searchParams }) {
           )}
 
           {edit && (
-            <details id="edit" className="card mt-4">
+            <details id="edit" className="card mt-4" open={Boolean(searchParams.err)}>
               <summary className="cursor-pointer select-none font-semibold">Настройки профиля</summary>
 
               <form action={updateUsername} className="mt-4 space-y-2">
@@ -223,7 +243,12 @@ export default async function Profile({ params, searchParams }) {
                 <textarea name="bio" defaultValue={u.bio || ""} rows={3} maxLength={500} placeholder="О себе" className="input resize-none" />
 
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <input name="city" defaultValue={u.city || ""} placeholder="Город" className="input" />
+                  <select name="city" defaultValue={CITIES.includes(u.city) ? u.city : ""} className="input cursor-pointer">
+                    <option value="">Город не выбран</option>
+                    {CITIES.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
                   <input name="district" defaultValue={u.district || ""} placeholder="Микрорайон" className="input" />
                 </div>
 
@@ -239,7 +264,7 @@ export default async function Profile({ params, searchParams }) {
           )}
         </aside>
 
-        <main className="min-w-0 space-y-6">
+        <div className="min-w-0 space-y-6">
           <div className="flex gap-1 overflow-x-auto border-b border-white/10">
             {tabs.map((t) => {
               const active = tab === t.key;
@@ -361,7 +386,7 @@ export default async function Profile({ params, searchParams }) {
 
                           <div className="mt-2 rounded-lg border border-hot/40 bg-hot/10 p-2 text-xs">
                             <b className="block text-hot">
-                              {isAppeal ? "Отправлена апелляция" : "Удалено администрацией"}
+                              {isAppeal ? "Отправлена апелляция" : l.deletedReason === "Удалено владельцем" ? "Удалено вами" : "Удалено администрацией"}
                             </b>
                             <span className="opacity-90">
                               Причина: {l.previousReason || l.deletedReason || "не указана"}
@@ -393,6 +418,14 @@ export default async function Profile({ params, searchParams }) {
                                 }}
                               />
                             </div>
+                          )}
+                          {own && isDeleted && l.deletedReason === "Удалено владельцем" && (
+                            <form action={restoreOwnListing} className="mt-auto pt-3">
+                              <input type="hidden" name="id" value={l.id} />
+                              <button className="w-full rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20">
+                                ↩ Восстановить объявление
+                              </button>
+                            </form>
                           )}
                           {isAppeal && (
                             <div className="mt-auto pt-3 text-center text-xs text-amber-400">
@@ -524,7 +557,7 @@ export default async function Profile({ params, searchParams }) {
               </div>
             )}
           </section>
-        </main>
+        </div>
       </div>
     </div>
   );

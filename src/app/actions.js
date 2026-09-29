@@ -9,16 +9,31 @@ import { getUser, setSession, mailOk } from "@/lib/auth";
 import { allow, ip } from "@/lib/limit";
 import { sendMail } from "@/lib/mail";
 import { saveFile } from "@/lib/upload";
-import { CAT_TO_TYPE, COMPONENT_KEYS, MAX_PRICE, MAX_DESCRIPTION, MAX_TITLE } from "@/lib/constants";
+import {
+  CAT_TO_TYPE, COMPONENT_KEYS, MAX_PRICE, MAX_DESCRIPTION, MAX_TITLE, MAX_PHOTOS,
+  PC_BUILD_COMPONENTS, CATS, CITIES, COMPONENT_PRESETS, COMPONENT_LABELS, CATEGORY_TO_COMPONENT,
+} from "@/lib/constants";
+import { checkCaptcha, makeCaptcha } from "@/lib/captcha";
 
-const captchaOk = (f) => Number(f.get("a")) + Number(f.get("b")) === Number(f.get("answer"));
+const captchaOk = checkCaptcha;
+
+const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/;
+const isFile = (x) => x && typeof x === "object" && x.size > 0;
+// Правки владельца возвращают опубликованное объявление на модерацию
+const needsRemoderation = (l, me) => l.status === "PUBLISHED" && l.userId === me.id && me.role !== "SUPER_ADMIN";
+const revalidateProfiles = () => revalidatePath("/u/[username]", "page");
+
+// Клиент запрашивает свежую подписанную капчу
+export async function newCaptcha() {
+  return makeCaptcha();
+}
 
 // ---------- Аутентификация ----------
 export async function login(_, f) {
   if (!(await allow(`login:${ip()}`, 15, 900))) return { error: "Слишком много попыток входа. Подождите 15 минут" };
   if (!captchaOk(f)) return { error: "Неверный ответ на капчу" };
-  const u = await prisma.user.findUnique({ where: { email: String(f.get("email")).toLowerCase() } });
-  if (!u || !(await bcrypt.compare(String(f.get("password")), u.passwordHash))) return { error: "Неверная почта или пароль" };
+  const u = await prisma.user.findUnique({ where: { email: String(f.get("email") || "").toLowerCase().trim() } });
+  if (!u || !(await bcrypt.compare(String(f.get("password") || ""), u.passwordHash))) return { error: "Неверная почта или пароль" };
   if (u.status === "BANNED") return { error: "Аккаунт заблокирован" };
   await setSession(u.id);
   redirect("/");
@@ -27,17 +42,25 @@ export async function login(_, f) {
 export async function register(_, f) {
   if (!(await allow(`reg:${ip()}`, 5, 3600))) return { error: "Слишком много регистраций с вашего адреса. Попробуйте позже" };
   if (!captchaOk(f)) return { error: "Неверный ответ на капчу" };
-  const email = String(f.get("email")).toLowerCase();
-  const username = String(f.get("username")).trim();
-  if (!email || username.length < 3 || String(f.get("password")).length < 8) return { error: "Ник от 3 символов, пароль от 8" };
-  if (await prisma.user.findFirst({ where: { OR: [{ email }, { username }] } })) return { error: "Почта или ник уже заняты" };
+  const email = String(f.get("email") || "").toLowerCase().trim();
+  const username = String(f.get("username") || "").trim();
+  const password = String(f.get("password") || "");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Введите корректную почту" };
+  if (!USERNAME_RE.test(username)) return { error: "Ник: 3–20 символов, только латиница, цифры и _" };
+  if (password.length < 8) return { error: "Пароль — минимум 8 символов" };
+  const taken = await prisma.user.findFirst({
+    where: { OR: [{ email }, { username: { equals: username, mode: "insensitive" } }] },
+    select: { email: true },
+  });
+  if (taken) return { error: taken.email === email ? "Эта почта уже зарегистрирована" : "Этот ник уже занят" };
+  const cityRaw = String(f.get("city") || "");
   const u = await prisma.user.create({
     data: {
       email,
       username,
-      passwordHash: await bcrypt.hash(String(f.get("password")), 10),
-      city: f.get("city") || null,
-      district: f.get("district") || null,
+      passwordHash: await bcrypt.hash(password, 10),
+      city: CITIES.includes(cityRaw) ? cityRaw : null,
+      district: String(f.get("district") || "").trim().slice(0, 100) || null,
       emailVerified: !process.env.SMTP_HOST,
     },
   });
@@ -56,19 +79,23 @@ export async function sendMessage(f) {
   const me = await getUser();
   if (!me) redirect("/login");
   const text = String(f.get("text") || "").trim().slice(0, 2000);
-  if (!text) return;
-  if (!mailOk(me) || !(await allow(`msg:${me.id}`, 20, 60))) return;
+  if (!text) return { error: "Введите сообщение" };
+  if (!mailOk(me)) return { error: "Подтвердите почту, чтобы писать в чат" };
 
-  const receiverId = f.get("receiverId");
-  const listingId = f.get("listingId") || null;
-  if (!receiverId || receiverId === me.id) return;
+  const receiverId = String(f.get("receiverId") || "");
+  const listingId = f.get("listingId") ? String(f.get("listingId")) : null;
+  if (!receiverId || receiverId === me.id) return { error: "Нельзя написать самому себе" };
 
-  const receiver = await prisma.user.findUnique({ where: { id: receiverId }, select: { id: true } });
-  if (!receiver) return;
+  const receiver = await prisma.user.findUnique({ where: { id: receiverId }, select: { id: true, status: true } });
+  if (!receiver || receiver.status === "BANNED") return { error: "Пользователь недоступен" };
 
   if (listingId) {
-    const listing = await prisma.listing.findUnique({ where: { id: listingId }, select: { id: true } });
-    if (!listing) return;
+    const listing = await prisma.listing.findUnique({ where: { id: listingId }, select: { id: true, userId: true, status: true } });
+    if (!listing) return { error: "Объявление не найдено" };
+    if (listing.userId !== me.id && listing.userId !== receiverId) return { error: "Диалог возможен только с продавцом объявления" };
+    if (listing.userId !== me.id && me.role !== "SUPER_ADMIN" && listing.status !== "PUBLISHED") {
+      return { error: "Объявление недоступно для переписки" };
+    }
   }
 
   const blocked = await prisma.block.findFirst({
@@ -79,11 +106,14 @@ export async function sendMessage(f) {
       ],
     },
   });
-  if (blocked) return;
+  if (blocked) return { error: "Отправка сообщений недоступна" };
+
+  if (!(await allow(`msg:${me.id}`, 20, 60))) return { error: "Слишком много сообщений. Подождите минуту" };
 
   await prisma.message.create({ data: { senderId: me.id, receiverId, listingId, text } });
   if (listingId) revalidatePath(`/listing/${listingId}`);
   revalidatePath("/chat");
+  return { ok: true };
 }
 
 export async function editMessage(f) {
@@ -209,14 +239,14 @@ export async function approveListing(f) {
   revalidatePath("/admin/listings");
   revalidatePath("/");
   revalidatePath(`/listing/${id}`);
-  revalidatePath(`/u/${l.userId}`);
+  revalidateProfiles();
 }
 
 export async function requestListingChanges(f) {
   const me = await getUser();
   if (me?.role !== "SUPER_ADMIN") throw new Error("Forbidden");
   const id = f.get("id");
-  const note = String(f.get("note") || "").trim().slice(0, 500);
+  const note = f.getAll("note").map((x) => String(x || "").trim()).filter(Boolean).join(" — ").slice(0, 500);
   if (note.length < 5) throw new Error("Укажите причину (минимум 5 символов)");
   const l = await prisma.listing.findUnique({ where: { id } });
   if (!l || l.status !== "UNDER_REVIEW") return;
@@ -234,7 +264,7 @@ export async function requestListingChanges(f) {
   ]);
   revalidatePath("/admin/listings");
   revalidatePath(`/listing/${id}`);
-  revalidatePath(`/u/${l.userId}`);
+  revalidateProfiles();
 }
 
 export async function rejectListing(f) {
@@ -257,7 +287,7 @@ export async function rejectListing(f) {
     }),
   ]);
   revalidatePath("/admin/listings");
-  revalidatePath(`/u/${l.userId}`);
+  revalidateProfiles();
 }
 
 export async function setTestResult(f) {
@@ -302,10 +332,20 @@ export async function deleteListing(f) {
   await prisma.$transaction([
     prisma.adminLog.create({ data: { adminId: me.id, actionType: "DELETE_LISTING", targetId: id, reason, details: l.title } }),
     prisma.listing.update({ where: { id }, data: { status: "DELETED", deletedReason: reason, deletedAt: new Date() } }),
+    ...(l.userId !== me.id
+      ? [prisma.message.create({
+          data: {
+            senderId: me.id,
+            receiverId: l.userId,
+            listingId: id,
+            text: `🗑 Ваше объявление «${l.title}» удалено администрацией.\n\nПричина: ${reason}\n\nВы можете подать апелляцию в профиле → Удалённые.`,
+          },
+        })]
+      : []),
   ]);
   revalidatePath("/admin/listings");
   revalidatePath("/");
-  revalidatePath(`/u/${l.userId}`);
+  revalidateProfiles();
   if (f.get("back")) redirect(f.get("back"));
 }
 
@@ -321,7 +361,7 @@ export async function restoreListing(f) {
   ]);
   revalidatePath("/admin/listings");
   revalidatePath("/");
-  revalidatePath(`/u/${l.userId}`);
+  revalidateProfiles();
 }
 
 // ---------- Апелляции ----------
@@ -393,7 +433,7 @@ export async function approveAppeal(f) {
   revalidatePath("/admin/listings");
   revalidatePath("/");
   revalidatePath(`/listing/${id}`);
-  revalidatePath(`/u/${l.userId}`);
+  revalidateProfiles();
 }
 
 export async function rejectAppeal(f) {
@@ -414,7 +454,7 @@ export async function rejectAppeal(f) {
     }),
   ]);
   revalidatePath("/admin/listings");
-  revalidatePath(`/u/${l.userId}`);
+  revalidateProfiles();
 }
 
 export async function setAccountStatus(f) {
@@ -448,32 +488,46 @@ export async function resolveReport(f) {
 // ---------- Профили, траст, отзывы ----------
 export async function updateProfile(f) {
   const me = await getUser();
-  const id = f.get("id");
+  const id = String(f.get("id") || "");
   if (!me || (me.id !== id && me.role !== "SUPER_ADMIN")) throw new Error("Forbidden");
+  const target = await prisma.user.findUnique({ where: { id }, select: { username: true } });
+  if (!target) return;
+  const cityRaw = String(f.get("city") || "").trim();
   const data = {
-    bio: String(f.get("bio") || "").slice(0, 500),
-    city: f.get("city") || null,
-    district: f.get("district") || null,
+    bio: String(f.get("bio") || "").trim().slice(0, 500),
+    city: CITIES.includes(cityRaw) ? cityRaw : null,
+    district: String(f.get("district") || "").trim().slice(0, 100) || null,
   };
-  const av = await saveFile(f.get("avatar"));
-  if (av) data.avatarUrl = av;
-  const bn = await saveFile(f.get("banner"));
-  if (bn) data.bannerUrl = bn;
+  let uploadError = false;
+  try {
+    const av = await saveFile(f.get("avatar"));
+    if (av) data.avatarUrl = av;
+    const bn = await saveFile(f.get("banner"));
+    if (bn) data.bannerUrl = bn;
+  } catch {
+    uploadError = true;
+  }
+  if (uploadError) redirect(`/u/${target.username}?err=upload#edit`);
   const u = await prisma.user.update({ where: { id }, data });
   revalidatePath(`/u/${u.username}`);
+  revalidatePath("/");
 }
 
 export async function updateUsername(f) {
   const me = await getUser();
-  if (!me) return;
-  const username = String(f.get("username") || "").trim().toLowerCase();
-  if (!/^[a-z0-9_]{3,20}$/.test(username)) return;
+  if (!me) redirect("/login");
+  const username = String(f.get("username") || "").trim();
   if (username === me.username) return;
-  const taken = await prisma.user.findUnique({ where: { username } });
-  if (taken) return;
+  if (!USERNAME_RE.test(username)) redirect(`/u/${me.username}?err=username#edit`);
+  const taken = await prisma.user.findFirst({
+    where: { username: { equals: username, mode: "insensitive" }, NOT: { id: me.id } },
+    select: { id: true },
+  });
+  if (taken) redirect(`/u/${me.username}?err=taken#edit`);
+  if (!(await allow(`rn:${me.id}`, 3, 86400))) redirect(`/u/${me.username}?err=rate#edit`);
   await prisma.user.update({ where: { id: me.id }, data: { username } });
   revalidatePath("/");
-  revalidatePath(`/u/${username}`);
+  redirect(`/u/${username}`);
 }
 
 export async function removeMedia(f) {
@@ -503,10 +557,12 @@ export async function addReview(f) {
     me.role === "SUPER_ADMIN" ||
     (await prisma.listing.count({ where: { userId: id, buyerId: me.id, status: "SOLD" } })) > 0;
   if (!deal || !mailOk(me) || !(await allow(`rev:${me.id}`, 10, 3600))) return;
-  const rating = Math.min(10, Math.max(1, +f.get("rating") || 10));
+  const rating = Math.min(10, Math.max(1, Math.round(+f.get("rating") || 10)));
+  const reviewText = String(f.get("text") || "").trim().slice(0, 500);
+  if (!reviewText) return;
   await prisma.review.deleteMany({ where: { authorId: me.id, targetId: id } });
   await prisma.review.create({
-    data: { authorId: me.id, targetId: id, rating, pinned: me.role === "SUPER_ADMIN", text: String(f.get("text")).slice(0, 500) },
+    data: { authorId: me.id, targetId: id, rating, pinned: me.role === "SUPER_ADMIN", text: reviewText },
   });
   const { _avg } = await prisma.review.aggregate({ where: { targetId: id }, _avg: { rating: true } });
   const u = await prisma.user.update({ where: { id }, data: { rating: _avg.rating || 0 } });
@@ -533,47 +589,90 @@ function parseMetrics(s) {
   );
 }
 
-export async function updateListing(f) {
+// Проверка «бренд + модель» по пресетам из constants
+const validComponent = (type, brand, model) =>
+  Boolean(COMPONENT_PRESETS[type]?.[brand]?.includes(model));
+
+function readComponents(f, category) {
+  if (category === "Готовые ПК") {
+    const components = [];
+    for (const type of PC_BUILD_COMPONENTS) {
+      const brand = String(f.get(`pc_${type}_brand`) || "").trim();
+      const model = String(f.get(`pc_${type}_model`) || "").trim();
+      if (!validComponent(type, brand, model)) {
+        return { error: `Для готового ПК выберите: ${COMPONENT_LABELS[type]}` };
+      }
+      components.push({ type, brand, model });
+    }
+    return { components, brand: null, modelPreset: null };
+  }
+  const type = CATEGORY_TO_COMPONENT[category];
+  if (type && COMPONENT_PRESETS[type]) {
+    const brand = String(f.get("brand") || "").trim();
+    const model = String(f.get("modelPreset") || "").trim();
+    if (!validComponent(type, brand, model)) {
+      return { error: `Выберите ${COMPONENT_LABELS[type].toLowerCase()} из списка (бренд и модель)` };
+    }
+    return { components: [{ type, brand, model }], brand, modelPreset: model };
+  }
+  return { components: [], brand: null, modelPreset: null };
+}
+
+function readBasics(f, fallbackCity) {
+  const title = String(f.get("title") || "").trim().slice(0, MAX_TITLE);
+  const description = String(f.get("description") || "").trim().slice(0, MAX_DESCRIPTION);
+  const category = String(f.get("category") || "");
+  const price = Math.round(Number(f.get("price")));
+  const cityRaw = String(f.get("city") || "");
+  const city = CITIES.includes(cityRaw) ? cityRaw : fallbackCity || "Актау";
+  const district = String(f.get("district") || "").trim().slice(0, 100);
+  if (title.length < 5) return { error: "Заголовок — минимум 5 символов" };
+  if (!CATS.includes(category)) return { error: "Выберите категорию" };
+  if (!Number.isFinite(price) || price <= 0 || price > MAX_PRICE) return { error: "Укажите корректную цену (больше 0)" };
+  if (description.length < 10) return { error: "Добавьте описание — минимум 10 символов" };
+  return { data: { title, description, category, price, city, district } };
+}
+
+export async function updateListing(_, f) {
   const me = await getUser();
-  if (!me) return;
-  const id = f.get("id");
+  if (!me) return { error: "Войдите в аккаунт" };
+  const id = String(f.get("id") || "");
   const l = await prisma.listing.findUnique({ where: { id } });
-  if (!l) return;
+  if (!l) return { error: "Объявление не найдено" };
   const isOwner = l.userId === me.id;
   const isAdmin = me.role === "SUPER_ADMIN";
-  if (!isOwner && !isAdmin) throw new Error("Forbidden");
-
-  const data = {
-    title: String(f.get("title") || "").slice(0, MAX_TITLE),
-    description: String(f.get("description") || "").slice(0, MAX_DESCRIPTION),
-    price: Math.min(MAX_PRICE, Math.max(0, Math.round(+f.get("price") || 0))),
-    category: String(f.get("category") || l.category),
-    city: String(f.get("city") || l.city),
-    district: String(f.get("district") || ""),
-  };
-
-  // Владелец правит PUBLISHED → сбрасываем на проверку
-  if (isOwner && !isAdmin && l.status === "PUBLISHED") {
-    data.status = "UNDER_REVIEW";
+  if (!isOwner && !isAdmin) return { error: "Нет доступа к этому объявлению" };
+  if (!isAdmin && ["DELETED", "APPEAL", "SOLD"].includes(l.status)) {
+    return { error: "Это объявление уже нельзя редактировать" };
   }
-  // Владелец правит NEEDS_EDIT → сбрасываем note, статус оставляем NEEDS_EDIT (он сам нажмёт «Отправить»)
-  if (isOwner && !isAdmin && l.status === "NEEDS_EDIT") {
-    data.moderationNote = null;
-  }
+
+  const basics = readBasics(f, l.city);
+  if (basics.error) return basics;
+  const comp = readComponents(f, basics.data.category);
+  if (comp.error) return comp;
+
+  const data = { ...basics.data, brand: comp.brand, modelPreset: comp.modelPreset };
+  if (needsRemoderation(l, me)) data.status = "UNDER_REVIEW";
 
   const testTitle = String(f.get("testTitle") || "").trim();
   const testMetrics = parseMetrics(f.get("testMetrics"));
   const componentType = CAT_TO_TYPE[data.category];
 
-  const rawTestImages = f.getAll("testImages") || [];
-  const newTestImages = (
-    await Promise.all(
-      rawTestImages.filter((file) => file && typeof file === "object" && file.size > 0).map(saveFile)
-    )
-  ).filter(Boolean);
+  let newTestImages = [];
+  try {
+    newTestImages = (await Promise.all(f.getAll("testImages").filter(isFile).slice(0, MAX_PHOTOS).map(saveFile))).filter(Boolean);
+  } catch (e) {
+    return { error: e?.message || "Не удалось загрузить изображения" };
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.listing.update({ where: { id: l.id }, data });
+
+    // Комплектующие обновляем целиком — фильтры на главной строятся по ним
+    await tx.listingComponent.deleteMany({ where: { listingId: l.id } });
+    if (comp.components.length) {
+      await tx.listingComponent.createMany({ data: comp.components.map((c) => ({ ...c, listingId: l.id })) });
+    }
 
     if (componentType && testTitle) {
       const existingTest = await tx.componentTest.findFirst({ where: { listingId: l.id, componentType } });
@@ -588,14 +687,7 @@ export async function updateListing(f) {
         });
       } else {
         await tx.componentTest.create({
-          data: {
-            listingId: l.id,
-            componentType,
-            testTitle,
-            resultStatus: "PASSED",
-            metrics: testMetrics,
-            mediaUrls: newTestImages,
-          },
+          data: { listingId: l.id, componentType, testTitle, resultStatus: "PASSED", metrics: testMetrics, mediaUrls: newTestImages },
         });
       }
     }
@@ -603,8 +695,9 @@ export async function updateListing(f) {
 
   revalidatePath(`/listing/${l.id}`);
   revalidatePath("/admin/listings");
-  revalidatePath(`/u/${me.username}`);
+  revalidateProfiles();
   revalidatePath("/");
+  return { ok: true, review: data.status === "UNDER_REVIEW" };
 }
 
 export async function removeTestImage(f) {
@@ -616,6 +709,11 @@ export async function removeTestImage(f) {
   if (!test || (test.listing.userId !== me.id && me.role !== "SUPER_ADMIN")) throw new Error("Forbidden");
   const updated = test.mediaUrls.filter((u) => u !== url);
   await prisma.componentTest.update({ where: { id: testId }, data: { mediaUrls: updated } });
+  if (needsRemoderation(test.listing, me)) {
+    await prisma.listing.update({ where: { id: test.listingId }, data: { status: "UNDER_REVIEW" } });
+    revalidatePath("/admin/listings");
+    revalidatePath("/");
+  }
   revalidatePath(`/listing/${test.listingId}`);
 }
 
@@ -626,60 +724,160 @@ export async function deleteTest(f) {
   const test = await prisma.componentTest.findUnique({ where: { id: testId }, include: { listing: true } });
   if (!test || (test.listing.userId !== me.id && me.role !== "SUPER_ADMIN")) throw new Error("Forbidden");
   await prisma.componentTest.delete({ where: { id: testId } });
+  if (needsRemoderation(test.listing, me)) {
+    await prisma.listing.update({ where: { id: test.listingId }, data: { status: "UNDER_REVIEW" } });
+    revalidatePath("/admin/listings");
+    revalidatePath("/");
+  }
   revalidatePath(`/listing/${test.listingId}`);
 }
 
-export async function addListingImage(f) {
-  const l = await guardListingOwner(f.get("id"));
-  const url = await saveFile(f.get("photo"));
-  if (url) await prisma.listingImage.create({ data: { listingId: l.id, url, order: 99 } });
+export async function addListingImage(_, f) {
+  const me = await getUser();
+  const l = me ? await prisma.listing.findUnique({ where: { id: String(f.get("id") || "") }, include: { _count: { select: { images: true } } } }) : null;
+  if (!me || !l || (l.userId !== me.id && me.role !== "SUPER_ADMIN")) return { error: "Нет доступа" };
+  if (l._count.images >= MAX_PHOTOS) return { error: `Максимум ${MAX_PHOTOS} фото. Удалите лишнее, чтобы добавить новое` };
+  let url = null;
+  try {
+    url = await saveFile(f.get("photo"));
+  } catch (e) {
+    return { error: e?.message || "Не удалось загрузить фото" };
+  }
+  if (!url) return { error: "Не удалось обработать файл. Подойдут JPG, PNG, WEBP или GIF до 5 МБ" };
+  const remod = needsRemoderation(l, me);
+  await prisma.$transaction([
+    prisma.listingImage.create({ data: { listingId: l.id, url, order: 99 } }),
+    ...(remod ? [prisma.listing.update({ where: { id: l.id }, data: { status: "UNDER_REVIEW" } })] : []),
+  ]);
   revalidatePath(`/listing/${l.id}`);
+  if (remod) {
+    revalidatePath("/admin/listings");
+    revalidatePath("/");
+  }
+  return { ok: true, review: remod };
 }
 
 export async function removeListingImage(f) {
-  const i = await prisma.listingImage.findUnique({ where: { id: f.get("id") } });
+  const i = await prisma.listingImage.findUnique({ where: { id: String(f.get("id") || "") } });
   if (!i) return;
   await guardListingOwner(i.listingId);
+  const left = await prisma.listingImage.count({ where: { listingId: i.listingId } });
+  if (left <= 1) return; // у объявления всегда должно остаться хотя бы одно фото
   await prisma.listingImage.delete({ where: { id: i.id } });
   revalidatePath(`/listing/${i.listingId}`);
 }
 
-export async function createListing(f) {
+export async function createListing(_, f) {
   const me = await getUser();
   if (!me) redirect("/login");
-  const title = String(f.get("title")).trim();
-  if (!title || !mailOk(me) || !(await allow(`lst:${me.id}`, 10, 3600))) return;
+  if (!mailOk(me)) return { error: "Подтвердите почту, чтобы публиковать объявления" };
 
-  const photos = (await Promise.all(f.getAll("photos").map(saveFile))).filter(Boolean);
-  const tests = [];
-  for (const t of COMPONENT_KEYS) {
-    const tt = String(f.get(`t_${t}_title`) || "").trim();
-    if (!tt) continue;
-    const mediaUrls = (await Promise.all(f.getAll(`t_${t}_shots`).map(saveFile))).filter(Boolean);
-    tests.push({
-      componentType: t,
-      testTitle: tt,
-      resultStatus: "PASSED",
-      metrics: parseMetrics(f.get(`t_${t}_metrics`)),
-      mediaUrls,
-    });
+  const basics = readBasics(f, me.city);
+  if (basics.error) return basics;
+  const { category } = basics.data;
+  if (!basics.data.district) basics.data.district = me.district || "";
+
+  const comp = readComponents(f, category);
+  if (comp.error) return comp;
+
+  const photoFiles = f.getAll("photos").filter(isFile);
+  if (photoFiles.length === 0) return { error: "Загрузите хотя бы 1 фото товара" };
+  if (photoFiles.length > MAX_PHOTOS) return { error: `Максимум ${MAX_PHOTOS} фото товара` };
+
+  const shots = (t) => f.getAll(`t_${t}_shots`).filter(isFile);
+  if (category === "Видеокарты" && shots("GPU").length < 2) return { error: "Для видеокарты нужно минимум 2 скриншота тестов" };
+  if (category === "Процессоры" && shots("CPU").length < 2) return { error: "Для процессора нужно минимум 2 скриншота тестов" };
+  if (category === "Готовые ПК" && shots("GPU").length < 2 && shots("CPU").length < 2) {
+    return { error: "Для готового ПК нужно минимум 2 скриншота тестов видеокарты или процессора" };
   }
+
+  if (!(await allow(`lst:${me.id}`, 10, 3600))) return { error: "Слишком много объявлений за час. Попробуйте позже" };
+
+  let photos;
+  const tests = [];
+  try {
+    photos = (await Promise.all(photoFiles.map(saveFile))).filter(Boolean);
+    for (const t of COMPONENT_KEYS) {
+      const tt = String(f.get(`t_${t}_title`) || "").trim().slice(0, 200);
+      if (!tt) continue;
+      const mediaUrls = (await Promise.all(shots(t).slice(0, MAX_PHOTOS).map(saveFile))).filter(Boolean);
+      tests.push({
+        componentType: t,
+        testTitle: tt,
+        resultStatus: "PASSED",
+        metrics: parseMetrics(f.get(`t_${t}_metrics`)),
+        mediaUrls,
+      });
+    }
+  } catch (e) {
+    return { error: e?.message || "Не удалось загрузить файлы. Попробуйте ещё раз" };
+  }
+  if (!photos.length) return { error: "Фото не удалось обработать. Подойдут JPG, PNG, WEBP или GIF до 5 МБ" };
 
   const l = await prisma.listing.create({
     data: {
-      title,
-      description: String(f.get("description")),
-      price: Math.min(MAX_PRICE, Math.max(0, Math.round(+f.get("price") || 0))),
-      category: String(f.get("category")),
-      city: String(f.get("city") || me.city || "Актау"),
-      district: String(f.get("district") || me.district || ""),
+      ...basics.data,
+      brand: comp.brand,
+      modelPreset: comp.modelPreset,
       userId: me.id,
       status: "UNDER_REVIEW",
       images: { create: photos.map((url, order) => ({ url, order })) },
       tests: { create: tests },
+      components: { create: comp.components },
     },
   });
+  revalidatePath("/admin/listings");
+  revalidateProfiles();
   redirect(`/listing/${l.id}`);
+}
+
+// ---------- Подсчёт пресетов (для фильтра) ----------
+export async function getPresetCounts(category, city) {
+  const where = {
+    status: "PUBLISHED",
+    category,
+    modelPreset: { not: null },
+    user: { status: { not: "BANNED" } },
+    ...(city && city !== "Весь Казахстан" ? { city } : {}),
+  };
+
+  const counts = await prisma.listing.groupBy({
+    by: ["modelPreset"],
+    where,
+    _count: { _all: true },
+  });
+
+  return counts.reduce((acc, item) => {
+    if (item.modelPreset) acc[item.modelPreset] = item._count._all;
+    return acc;
+  }, {});
+}
+
+// ---------- Подсчёт компонентов готовых ПК (для фильтра) ----------
+export async function getComponentCounts(componentType, city) {
+  const where = {
+    listing: {
+      status: "PUBLISHED",
+      category: "Готовые ПК",
+      user: { status: { not: "BANNED" } },
+      ...(city && city !== "Весь Казахстан" ? { city } : {}),
+    },
+    type: componentType,
+  };
+
+  const counts = await prisma.listingComponent.groupBy({
+    by: ["brand", "model"],
+    where,
+    _count: { _all: true },
+  });
+
+  return counts.reduce((acc, item) => {
+    if (item.brand && item.model) {
+      const key = `${item.brand} ${item.model}`;
+      acc[key] = (acc[key] || 0) + item._count._all;
+    }
+    return acc;
+  }, {});
 }
 
 // ---------- Проверка пользователей ----------
@@ -741,17 +939,19 @@ export async function resetTrust(f) {
 export async function sendSupport(f) {
   const me = await getUser();
   if (!me) redirect("/login");
-  const to = await prisma.user.findUnique({ where: { id: f.get("receiverId") } });
+  const to = await prisma.user.findUnique({ where: { id: String(f.get("receiverId") || "") } });
   const text = String(f.get("text") || "").trim().slice(0, 2000);
-  if (!to || !text || (me.role !== "SUPER_ADMIN" && to.role !== "SUPER_ADMIN")) return;
-  if (!(await allow(`sup:${me.id}`, 20, 60))) return;
+  if (!text) return { error: "Введите сообщение" };
+  if (!to || (me.role !== "SUPER_ADMIN" && to.role !== "SUPER_ADMIN")) return { error: "Получатель недоступен" };
+  if (!(await allow(`sup:${me.id}`, 20, 60))) return { error: "Слишком много сообщений. Подождите минуту" };
   const blocked = await prisma.block.findFirst({
     where: { OR: [{ blockerId: to.id, blockedId: me.id }, { blockerId: me.id, blockedId: to.id }] },
   });
-  if (blocked) return;
+  if (blocked) return { error: "Отправка сообщений недоступна" };
   await prisma.message.create({ data: { senderId: me.id, receiverId: to.id, text } });
   revalidatePath("/review");
   revalidatePath("/support");
+  return { ok: true };
 }
 
 // ---------- Почта, сброс пароля, продажа ----------
@@ -805,11 +1005,21 @@ export async function markSold(f) {
   if (l.status !== "PUBLISHED") return;
   const buyerId = f.get("buyerId") || null;
   if (buyerId) {
-    const buyer = await prisma.user.findUnique({ where: { id: buyerId }, select: { id: true } });
-    if (!buyer) return;
+    if (buyerId === l.userId) return;
+    const talked = await prisma.message.count({
+      where: {
+        listingId: l.id,
+        OR: [
+          { senderId: buyerId, receiverId: l.userId },
+          { senderId: l.userId, receiverId: buyerId },
+        ],
+      },
+    });
+    if (!talked) return; // покупатель должен был переписываться по этому объявлению
   }
   await prisma.listing.update({ where: { id: l.id }, data: { status: "SOLD", buyerId } });
   revalidatePath(`/listing/${l.id}`);
+  revalidateProfiles();
   revalidatePath("/");
 }
 
@@ -865,6 +1075,28 @@ export async function deleteOwnListings(f) {
   revalidatePath("/");
 }
 
+export async function restoreOwnListing(f) {
+  const me = await getUser();
+  if (!me) return;
+  const id = String(f.get("id") || "");
+  const l = await prisma.listing.findUnique({ where: { id } });
+  // Восстановить можно только то, что удалил сам владелец (не решение модерации)
+  if (!l || l.userId !== me.id || l.status !== "DELETED" || l.deletedReason !== "Удалено владельцем") return;
+  await prisma.listing.update({ where: { id }, data: { status: "PUBLISHED", deletedReason: null, deletedAt: null } });
+  revalidatePath(`/listing/${id}`);
+  revalidatePath(`/u/${me.username}`);
+  revalidatePath("/");
+}
+
+// Счётчик просмотров: вызывается один раз за сессию из ViewCounter, владелец не накручивает
+export async function registerView(id) {
+  const me = await getUser();
+  await prisma.listing.updateMany({
+    where: { id: String(id), status: "PUBLISHED", ...(me ? { NOT: { userId: me.id } } : {}) },
+    data: { viewsCount: { increment: 1 } },
+  });
+}
+
 // ---------- Гайды ----------
 const DEFAULT_GUIDES = [
   { slug: "gpu", title: "Видеокарта", order: 1, videoUrl: "https://youtu.be/3MbZN8CyedM" },
@@ -878,7 +1110,7 @@ const DEFAULT_GUIDES = [
 export async function seedGuidesIfEmpty() {
   const count = await prisma.guideVideo.count();
   if (count > 0) return;
-  await prisma.guideVideo.createMany({ data: DEFAULT_GUIDES });
+  await prisma.guideVideo.createMany({ data: DEFAULT_GUIDES, skipDuplicates: true });
 }
 
 export async function saveGuideVideo(f) {

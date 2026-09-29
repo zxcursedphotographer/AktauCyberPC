@@ -10,9 +10,9 @@ export default function AdminSidebar({ isSuperAdmin, counts = {} }) {
   const items = [
     { href: "/admin", label: "Дашборд", icon: LayoutDashboard, exact: true },
     { href: "/admin/reports", label: "Жалобы", icon: Flag, badge: counts.reports, badgeCls: "bg-hot" },
-    { href: "/admin/listings", label: "Объявления", icon: Package, badge: counts.listings, badgeCls: "bg-amber-500" },
     ...(isSuperAdmin
       ? [
+          { href: "/admin/listings", label: "Объявления", icon: Package, badge: counts.listings, badgeCls: "bg-amber-500" },
           { href: "/admin/users", label: "Пользователи", icon: Users },
           { href: "/admin/logs", label: "Журнал действий", icon: ScrollText },
         ]

@@ -9,9 +9,8 @@ export const revalidate = 30;
 const PAGE_SIZE = 48;
 
 export default async function Home({ searchParams: p }) {
-  // Параметры фильтра
   const q = (p?.q || "").trim();
-  const category = p?.category || "";
+  const category = p?.cat || p?.category || "";
   const city = p?.city || "";
   const min = p?.priceFrom ?? p?.min;
   const max = p?.priceTo ?? p?.max;
@@ -21,12 +20,43 @@ export default async function Home({ searchParams: p }) {
   const page = Math.max(1, Math.floor(+p?.page || 1));
   const skip = (page - 1) * PAGE_SIZE;
 
-  // Диапазон цены
+  // Множественный выбор моделей GPU/CPU (для категорий «Видеокарты»/«Процессоры»)
+  const gpuModels = (p?.gpu_models || "").split(",").filter(Boolean);
+  const cpuModels = (p?.cpu_models || "").split(",").filter(Boolean);
+
+  // Для готовых ПК — модели компонентов (полные строки "NVIDIA RTX 3070")
+  const pcGpuModels = (p?.pc_gpu_models || "").split(",").filter(Boolean);
+  const pcCpuModels = (p?.pc_cpu_models || "").split(",").filter(Boolean);
+
+  // Для готовых ПК: превращаем "NVIDIA RTX 3070" в { brand: "NVIDIA", model: "RTX 3070" }
+  function parseFullComponent(full) {
+    const sp = full.indexOf(" ");
+    if (sp === -1) return null;
+    return { brand: full.slice(0, sp), model: full.slice(sp + 1) };
+  }
+
+  const pcComponentAnd = [];
+  for (const full of pcGpuModels) {
+    const parsed = parseFullComponent(full);
+    if (parsed) {
+      pcComponentAnd.push({
+        components: { some: { type: "GPU", brand: parsed.brand, model: parsed.model } },
+      });
+    }
+  }
+  for (const full of pcCpuModels) {
+    const parsed = parseFullComponent(full);
+    if (parsed) {
+      pcComponentAnd.push({
+        components: { some: { type: "CPU", brand: parsed.brand, model: parsed.model } },
+      });
+    }
+  }
+
   const priceWhere = {};
   if (min != null && min !== "") priceWhere.gte = Math.max(0, +min);
   if (max != null && max !== "") priceWhere.lte = Math.max(0, +max);
 
-  // Основной where
   const where = {
     status: "PUBLISHED",
     user: {
@@ -42,19 +72,24 @@ export default async function Home({ searchParams: p }) {
     ...(category && category !== "ALL" && { category }),
     ...(city && city !== "Весь Казахстан" && { city }),
     ...(Object.keys(priceWhere).length > 0 && { price: priceWhere }),
+    // Множественный выбор моделей для отдельных категорий
+    ...(gpuModels.length > 0 && { modelPreset: { in: gpuModels } }),
+    ...(cpuModels.length > 0 && { modelPreset: { in: cpuModels } }),
+    // Готовые ПК — компоненты
+    ...(pcComponentAnd.length > 0 && { AND: pcComponentAnd }),
   };
 
-  // Сортировка
   const sortMap = {
     newest: { createdAt: "desc" },
     oldest: { createdAt: "asc" },
     price_asc: { price: "asc" },
     price_desc: { price: "desc" },
     views: { viewsCount: "desc" },
+    trust: { user: { trustScore: "desc" } },
+    rating: { user: { rating: "desc" } },
   };
   const orderBy = sortMap[sort] || sortMap.newest;
 
-  // Параллельно: список + общее количество
   const [items, total] = await Promise.all([
     prisma.listing.findMany({
       where,
@@ -74,28 +109,29 @@ export default async function Home({ searchParams: p }) {
   const hasPrev = page > 1;
   const hasNext = page < totalPages;
 
-  // Хелпер: собрать URL с текущими фильтрами
   const buildPageHref = (targetPage) => {
     const sp = new URLSearchParams();
     if (q) sp.set("q", q);
-    if (category && category !== "ALL") sp.set("category", category);
+    if (category && category !== "ALL") sp.set("cat", category);
     if (city && city !== "Весь Казахстан") sp.set("city", city);
     if (min != null && min !== "") sp.set("priceFrom", String(min));
     if (max != null && max !== "") sp.set("priceTo", String(max));
     if (tmin > 1) sp.set("tmin", String(tmin));
     if (tmax < 100) sp.set("tmax", String(tmax));
     if (sort && sort !== "newest") sp.set("sort", sort);
+    if (gpuModels.length > 0) sp.set("gpu_models", gpuModels.join(","));
+    if (cpuModels.length > 0) sp.set("cpu_models", cpuModels.join(","));
+    if (pcGpuModels.length > 0) sp.set("pc_gpu_models", pcGpuModels.join(","));
+    if (pcCpuModels.length > 0) sp.set("pc_cpu_models", pcCpuModels.join(","));
     if (targetPage > 1) sp.set("page", String(targetPage));
     const qs = sp.toString();
     return qs ? `/?${qs}` : "/";
   };
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl space-y-6 p-4 lg:p-8">
-      {/* Панель поиска */}
+    <div className="mx-auto max-w-7xl space-y-6 lg:px-4">
       <SearchBar />
 
-      {/* Счётчик результатов */}
       {items.length > 0 && (
         <p className="text-xs text-slate-500 dark:text-slate-400">
           Найдено: <b className="text-slate-700 dark:text-slate-300">{total}</b>
@@ -107,10 +143,15 @@ export default async function Home({ searchParams: p }) {
         </p>
       )}
 
-      {/* Сообщение об отсутствии результатов */}
       {items.length === 0 && (
         <div className="card p-8 text-center text-slate-500 dark:text-slate-400">
-          {q || category || city ? (
+          {q ||
+          category ||
+          city ||
+          gpuModels.length > 0 ||
+          cpuModels.length > 0 ||
+          pcGpuModels.length > 0 ||
+          pcCpuModels.length > 0 ? (
             <>
               Ничего не найдено по вашему запросу.
               <br />
@@ -130,7 +171,6 @@ export default async function Home({ searchParams: p }) {
         </div>
       )}
 
-      {/* Сетка объявлений */}
       {items.length > 0 && (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {items.map((l) => (
@@ -140,7 +180,6 @@ export default async function Home({ searchParams: p }) {
               className="card group flex flex-col justify-between overflow-hidden !p-3 transition duration-200 hover:border-accent/50 hover:shadow-lg"
             >
               <div className="space-y-3">
-                {/* Контейнер фото */}
                 <div className="relative aspect-[4/3] w-full overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800/80">
                   {l.images[0] ? (
                     <>
@@ -162,7 +201,6 @@ export default async function Home({ searchParams: p }) {
                   )}
                 </div>
 
-                {/* Текстовая информация */}
                 <div className="space-y-1">
                   <p className="text-lg font-black text-accent">
                     {l.price.toLocaleString("ru")} ₸
@@ -179,7 +217,6 @@ export default async function Home({ searchParams: p }) {
                 </div>
               </div>
 
-              {/* Подвал карточки */}
               <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-2.5 dark:border-white/5">
                 <div className="flex min-w-0 items-center gap-2">
                   <Avatar user={l.user} size={22} />
@@ -200,7 +237,6 @@ export default async function Home({ searchParams: p }) {
         </div>
       )}
 
-      {/* Пагинация */}
       {totalPages > 1 && (
         <nav className="flex items-center justify-center gap-2 pt-4">
           {hasPrev ? (
@@ -224,6 +260,6 @@ export default async function Home({ searchParams: p }) {
           )}
         </nav>
       )}
-    </main>
+    </div>
   );
 }

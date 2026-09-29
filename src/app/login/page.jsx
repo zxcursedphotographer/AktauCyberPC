@@ -2,34 +2,38 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useFormState } from "react-dom";
-import { login, register } from "@/app/actions";
+import { useFormState, useFormStatus } from "react-dom";
+import { login, register, newCaptcha } from "@/app/actions";
 import { CITIES } from "@/lib/constants";
+
+function Submit({ children }) {
+  const { pending } = useFormStatus();
+  return (
+    <button disabled={pending} className="btn w-full justify-center disabled:opacity-60">
+      {pending ? "Подождите…" : children}
+    </button>
+  );
+}
 
 export default function LoginPage() {
   const [mode, setMode] = useState("login");
   const [ls, la] = useFormState(login, null);
   const [rs, ra] = useFormState(register, null);
-  const [n, setN] = useState(null);
+  const [cap, setCap] = useState(null);
 
+  // Капча подписывается сервером — подделать числа на клиенте нельзя
   useEffect(() => {
-    // Берём капчу из sessionStorage, чтобы не сбрасывалась при ошибке
-    let saved = null;
-    try {
-      saved = JSON.parse(sessionStorage.getItem("captcha") || "null");
-    } catch {}
-    if (!saved || Date.now() - saved.t > 3600e3) {
-      saved = {
-        a: 1 + Math.floor(Math.random() * 9),
-        b: 1 + Math.floor(Math.random() * 9),
-        t: Date.now(),
-      };
-      sessionStorage.setItem("captcha", JSON.stringify(saved));
-    }
-    setN(saved);
+    let alive = true;
+    newCaptcha().then((c) => alive && setCap(c)).catch(() => {});
+    return () => { alive = false; };
   }, []);
 
-  if (!n) return null;
+  // После ошибки ответ на капчу уже потрачен — берём новую пару чисел
+  const errText = (mode === "login" ? ls : rs)?.error;
+  useEffect(() => {
+    if (!errText) return;
+    newCaptcha().then(setCap).catch(() => {});
+  }, [errText, ls, rs]);
 
   const isL = mode === "login";
   const state = isL ? ls : rs;
@@ -42,7 +46,19 @@ export default function LoginPage() {
 
       {!isL && (
         <>
-          <input name="username" required placeholder="Ник" className="input" minLength={3} maxLength={20} autoComplete="username" />
+          <div>
+            <input
+              name="username"
+              required
+              placeholder="Ник (латиница, цифры, _)"
+              className="input"
+              minLength={3}
+              maxLength={20}
+              pattern="[A-Za-z0-9_]{3,20}"
+              title="3–20 символов: латиница, цифры и _"
+              autoComplete="username"
+            />
+          </div>
 
           <select name="city" defaultValue="Актау" className="input cursor-pointer">
             {CITIES.map((c) => (
@@ -64,11 +80,17 @@ export default function LoginPage() {
         autoComplete={isL ? "current-password" : "new-password"}
       />
 
-      <input type="hidden" name="a" value={n.a} />
-      <input type="hidden" name="b" value={n.b} />
+      {cap && (
+        <>
+          <input type="hidden" name="a" value={cap.a} />
+          <input type="hidden" name="b" value={cap.b} />
+          <input type="hidden" name="t" value={cap.t} />
+          <input type="hidden" name="sig" value={cap.sig} />
+        </>
+      )}
       <label className="block text-sm">
-        Сколько будет {n.a} + {n.b}?
-        <input name="answer" type="number" required className="input mt-1" inputMode="numeric" />
+        {cap ? `Сколько будет ${cap.a} + ${cap.b}?` : "Загружаем проверку…"}
+        <input name="answer" type="number" required disabled={!cap} className="input mt-1" inputMode="numeric" />
       </label>
 
       {isL && (
@@ -83,9 +105,7 @@ export default function LoginPage() {
         </p>
       )}
 
-      <button className="btn w-full justify-center">
-        {isL ? "Войти" : "Создать аккаунт"}
-      </button>
+      <Submit>{isL ? "Войти" : "Создать аккаунт"}</Submit>
 
       <button
         type="button"

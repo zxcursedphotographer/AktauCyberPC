@@ -1,7 +1,9 @@
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { getUser, mailOk } from "@/lib/auth";
+import { getUser, mailOk, isStaff } from "@/lib/auth";
+import ViewCounter from "@/components/ViewCounter";
 import AutoRefresh from "@/components/AutoRefresh";
 import TestTabs from "@/components/TestTabs";
 import ListingTools from "@/components/ListingTools";
@@ -10,13 +12,15 @@ import Avatar from "@/components/Avatar";
 import SellerReviews from "@/components/SellerReviews";
 import ListingGallery from "@/components/ListingGallery";
 import ChatForm from "@/components/ChatForm";
+import { COMPONENT_LABELS } from "@/lib/constants";
 
-const get = (id) =>
+const get = cache((id) =>
   prisma.listing.findUnique({
     where: { id },
     include: {
       images: { orderBy: { order: "asc" } },
       tests: true,
+      components: true,
       user: {
         select: {
           id: true,
@@ -28,11 +32,15 @@ const get = (id) =>
         },
       },
     },
-  });
+  }));
+
+// Публично видны только опубликованные и проданные; остальное — владельцу и персоналу
+const canView = (l, me) =>
+  l.status === "PUBLISHED" || l.status === "SOLD" || me?.id === l.userId || isStaff(me);
 
 export async function generateMetadata({ params }) {
   const l = await get(params.id);
-  if (!l) return {};
+  if (!l || !canView(l, await getUser())) return {};
   const title = `${l.title} — ${l.price.toLocaleString("ru")} ₸`;
   const description = `${l.city}${l.district ? `, ${l.district}` : ""}. ${l.description.slice(0, 120)}`;
   const images = l.images[0] ? [l.images[0].url] : [];
@@ -54,6 +62,8 @@ function formatTime(date) {
   return new Date(date).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
 }
 
+const COMPONENT_ORDER = ["GPU", "CPU", "RAM", "MOTHERBOARD", "PSU", "STORAGE"];
+
 export default async function ListingPage({ params }) {
   const l = await get(params.id);
   if (!l) notFound();
@@ -63,10 +73,9 @@ export default async function ListingPage({ params }) {
   const sa = me?.role === "SUPER_ADMIN";
   const canManage = own || sa;
 
+  if (!canView(l, me)) notFound();
   const isHidden = l.status === "DELETED" || l.status === "APPEAL";
-  if (isHidden && !canManage) notFound();
 
-  // Загружаем всё параллельно
   const [buyers, thread] = await Promise.all([
     canManage
       ? prisma.message
@@ -79,16 +88,18 @@ export default async function ListingPage({ params }) {
       : Promise.resolve([]),
     me && me.id !== l.userId
       ? prisma.message.findMany({
-          where: { listingId: l.id, OR: [{ senderId: me.id }, { receiverId: me.id }] },
+          where: {
+            listingId: l.id,
+            OR: [{ senderId: me.id }, { receiverId: me.id }],
+            NOT: [
+              { senderId: me.id, deletedForSender: true },
+              { receiverId: me.id, deletedForReceiver: true },
+            ],
+          },
           orderBy: { createdAt: "asc" },
         })
       : Promise.resolve([]),
   ]);
-
-  // Инкремент просмотров + отметка прочтения — fire and forget
-  if (!isHidden) {
-    prisma.listing.update({ where: { id: l.id }, data: { viewsCount: { increment: 1 } } }).catch(() => {});
-  }
   if (me && me.id !== l.userId) {
     prisma.message
       .updateMany({
@@ -98,8 +109,16 @@ export default async function ListingPage({ params }) {
       .catch(() => {});
   }
 
+  // Сортируем компоненты в удобном порядке
+  const sortedComponents = [...(l.components || [])].sort((a, b) => {
+    const ai = COMPONENT_ORDER.indexOf(a.type);
+    const bi = COMPONENT_ORDER.indexOf(b.type);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-4 lg:p-8">
+    <div className="mx-auto max-w-7xl space-y-6 lg:px-4">
+      {l.status === "PUBLISHED" && !own && <ViewCounter id={l.id} />}
       {l.status === "SOLD" && (
         <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm font-medium text-emerald-400">
           ✅ Это объявление продано
@@ -108,7 +127,7 @@ export default async function ListingPage({ params }) {
 
       {l.status === "DELETED" && (
         <div className="rounded-xl border border-hot/40 bg-hot/10 p-4 text-sm text-hot">
-          <b>Это объявление удалено администрацией.</b>
+          <b>{l.deletedReason === "Удалено владельцем" ? "Это объявление удалено владельцем." : "Это объявление удалено администрацией."}</b>
           <p className="mt-1 opacity-90">Причина: {l.deletedReason || "не указана"}</p>
           {l.deletedAt && (
             <p className="mt-0.5 text-xs opacity-70">{new Date(l.deletedAt).toLocaleString("ru")}</p>
@@ -169,6 +188,30 @@ export default async function ListingPage({ params }) {
               {l.title}
             </h1>
 
+            {/* Компоненты (для готовых ПК и одиночных категорий) */}
+            {sortedComponents.length > 0 && (
+              <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-cyan-400">
+                  Комплектующие
+                </h2>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {sortedComponents.map((c) => (
+                    <div
+                      key={c.id}
+                      className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2"
+                    >
+                      <span className="text-xs font-medium text-slate-400">
+                        {COMPONENT_LABELS[c.type] || c.type}
+                      </span>
+                      <span className="text-sm font-semibold text-slate-100">
+                        {c.brand} {c.model}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="border-t border-white/5 pt-4">
               <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">Описание</h2>
               <p className="whitespace-pre-line text-sm leading-relaxed text-slate-300 lg:text-base">
@@ -217,7 +260,7 @@ export default async function ListingPage({ params }) {
             )}
           </div>
 
-          {l.status !== "SOLD" && l.status !== "DELETED" && l.status !== "APPEAL" && (
+          {l.status === "PUBLISHED" && (
             <div className="card space-y-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-bold">Чат с продавцом</h2>
